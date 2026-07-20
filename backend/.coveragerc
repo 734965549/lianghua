@@ -1,0 +1,12 @@
+# 覆盖率配置：阶段 8
+[run]
+source = app
+omit =
+    app/db/migrations/*
+    app/tests/*
+    */__init__.py
+
+[report]
+precision = 0
+show_missing = true
+skip_covered = false

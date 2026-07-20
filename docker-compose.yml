@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17.10
+    container_name: lianghua-pg
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: lianghua
+      POSTGRES_PASSWORD: lianghua_dev
+      POSTGRES_DB: lianghua
+      TZ: Asia/Shanghai
+    volumes:
+      - lianghua_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lianghua -d lianghua"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  lianghua_pg_data:
