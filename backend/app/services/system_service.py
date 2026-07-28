@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.response import BizError
 from app.repositories.system_event_repo import SystemEventRepository
 from app.schemas.enums import Severity, SystemStatus
+from app.schemas.error_codes import ErrorCode
 from app.services.audit_service import AuditService
 from app.db.models.system_state import SystemState
 
@@ -94,7 +95,7 @@ class SystemStateService:
 
         if to_status not in VALID_TRANSITIONS.get(from_status, set()):
             raise BizError(
-                "RISK_INVALID_STATE_TRANSITION",
+                ErrorCode.RISK_INVALID_STATE_TRANSITION,
                 f"不允许从 {from_status.value} 迁移到 {to_status.value}",
             )
 
@@ -129,6 +130,17 @@ class SystemStateService:
                 "reason": reason,
                 "correlation_id": cid,
             },
+        )
+        from app.api.ws_hub import broadcast_sync
+
+        broadcast_sync(
+            "system.status",
+            {
+                "status": to_status.value,
+                "reason": reason,
+                "since": now.isoformat(),
+            },
+            correlation_id=cid,
         )
         return row
 

@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
 from app.db.models.order import Order
-from app.db.session import SessionLocal
+from app.db import session as db_session
 from app.repositories.order_repo import OrderRepository
+from app.repositories.risk_repo import RiskRepository
 from app.repositories.trade_repo import TradeRepository
 from app.schemas.enums import OrderStatus
+from app.schemas.error_codes import ErrorCode
 from app.sdk import manager as sdk_manager
 from app.sdk.base import AdapterError
 from app.sdk.models import CancelOrderRequest, PlaceOrderRequest, TradeUpdateEvent
@@ -51,15 +53,34 @@ def trade_to_dict(row) -> dict:
 
 class TradeService:
     def submit(self, order_id: UUID, *, correlation_id: str = "") -> Order:
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             repo = OrderRepository(db)
             order = repo.get_by_id(order_id)
             if order is None:
-                raise BizError("ORDER_NOT_FOUND", f"订单不存在: {order_id}", status=404)
+                raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {order_id}", status=404)
             if order.status != OrderStatus.SUBMITTING:
                 logger.warning("订单非 submitting 状态，跳过提交: %s %s", order.client_order_id, order.status.value)
                 db.commit()
+                return order
+
+            # 强制关口：必须有对应 passed 的 risk_checks，防止绕过风控直达 SDK
+            passed_check = RiskRepository(db).get_passed_by_client_order_id(order.client_order_id)
+            if passed_check is None:
+                order.fail_reason = "缺少通过的风控记录，禁止提交"
+                order_service.transition(order, OrderStatus.FAILED)
+                runtime_metrics.record_order_submit_result(False)
+                AuditService(db, correlation_id=correlation_id).log(
+                    action="order_submit",
+                    module="trade",
+                    object_type="order",
+                    object_id=order.client_order_id,
+                    result="rejected",
+                    reason=order.fail_reason,
+                )
+                db.commit()
+                broadcast_sync("order.update", order_to_dict(order), correlation_id=correlation_id)
+                logger.warning("订单缺少 passed 风控记录，拒绝提交: %s", order.client_order_id)
                 return order
 
             place_req = PlaceOrderRequest(
@@ -72,7 +93,11 @@ class TradeService:
                 price_type=order.price_type,
                 price=Decimal(str(order.price)) if order.price else None,
                 quantity=Decimal(str(order.quantity)),
-                metadata={"strategy_id": order.strategy_id or "", "signal_id": str(order.signal_id or "")},
+                metadata={
+                    "strategy_id": order.strategy_id or "",
+                    "signal_id": str(order.signal_id or ""),
+                    "check_id": str(passed_check.check_id),
+                },
             )
             db.commit()
         except Exception:
@@ -93,12 +118,12 @@ class TradeService:
             error_msg = str(exc)
             logger.exception("SDK 下单异常: %s", place_req.client_order_id)
 
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             repo = OrderRepository(db)
             order = repo.get_by_client_order_id(place_req.client_order_id)
             if order is None:
-                raise BizError("ORDER_NOT_FOUND", f"订单不存在: {place_req.client_order_id}", status=404)
+                raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {place_req.client_order_id}", status=404)
 
             audit = AuditService(db, correlation_id=correlation_id)
             now = datetime.now(timezone.utc)
@@ -147,12 +172,12 @@ class TradeService:
         *,
         correlation_id: str = "",
     ) -> Order:
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             repo = OrderRepository(db)
             order = repo.get_by_client_order_id(client_order_id)
             if order is None:
-                raise BizError("ORDER_NOT_FOUND", f"订单不存在: {client_order_id}", status=404)
+                raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {client_order_id}", status=404)
 
             cancel_req = CancelOrderRequest(
                 client_order_id=client_order_id,
@@ -179,12 +204,12 @@ class TradeService:
             error_msg = str(exc)
             logger.exception("SDK 撤单异常: %s", client_order_id)
 
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             repo = OrderRepository(db)
             order = repo.get_by_client_order_id(client_order_id)
             if order is None:
-                raise BizError("ORDER_NOT_FOUND", f"订单不存在: {client_order_id}", status=404)
+                raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {client_order_id}", status=404)
 
             audit = AuditService(db, correlation_id=correlation_id)
             if result and result.success:
@@ -206,7 +231,7 @@ class TradeService:
                     result="failed",
                     reason=error_msg or "cancel failed",
                 )
-                raise BizError("ORDER_CANCEL_FAILED", error_msg or "撤单失败")
+                raise BizError(ErrorCode.ORDER_CANCEL_FAILED, error_msg or "撤单失败")
 
             db.commit()
             broadcast_sync("order.update", order_to_dict(order), correlation_id=correlation_id)
@@ -221,7 +246,7 @@ class TradeService:
             db.close()
 
     def on_trade_update(self, event: TradeUpdateEvent) -> None:
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             trade_repo = TradeRepository(db)
             existing = trade_repo.get_by_sdk_trade_id(event.market, event.sdk_trade_id)
@@ -259,7 +284,8 @@ class TradeService:
                 raw_payload=event.raw_payload,
             )
 
-            new_filled = Decimal(str(order.filled_quantity)) + Decimal(str(event.quantity))
+            # 以成交汇总为权威值，避免轮询与回调双通道重复累加
+            new_filled = trade_repo.sum_quantity_by_client_order_id(order.client_order_id)
             order.filled_quantity = new_filled
             order.last_event_at = event.trade_time
 
@@ -269,14 +295,36 @@ class TradeService:
                     try:
                         order_service.transition(order, OrderStatus.FILLED)
                     except BizError:
-                        order.status = OrderStatus.FILLED
-                        order.last_event_at = event.trade_time
+                        logger.warning(
+                            "成交后迁移至 FILLED 失败，标记 UNKNOWN: %s (%s)",
+                            order.status.value,
+                            order.client_order_id,
+                        )
+                        try:
+                            order_service.transition(order, OrderStatus.UNKNOWN)
+                        except BizError:
+                            logger.warning(
+                                "无法标记 UNKNOWN，保持原状态: %s (%s)",
+                                order.status.value,
+                                order.client_order_id,
+                            )
             elif new_filled > Decimal("0") and order.status == OrderStatus.SUBMITTED:
                 try:
                     order_service.transition(order, OrderStatus.PARTIALLY_FILLED)
                 except BizError:
-                    order.status = OrderStatus.PARTIALLY_FILLED
-                    order.last_event_at = event.trade_time
+                    logger.warning(
+                        "成交后迁移至 PARTIALLY_FILLED 失败，标记 UNKNOWN: %s (%s)",
+                        order.status.value,
+                        order.client_order_id,
+                    )
+                    try:
+                        order_service.transition(order, OrderStatus.UNKNOWN)
+                    except BizError:
+                        logger.warning(
+                            "无法标记 UNKNOWN，保持原状态: %s (%s)",
+                            order.status.value,
+                            order.client_order_id,
+                        )
 
             db.commit()
             broadcast_sync("trade.update", trade_to_dict(trade))

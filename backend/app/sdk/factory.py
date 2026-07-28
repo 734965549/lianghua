@@ -8,6 +8,13 @@ def get_adapter(market: str | Market, config: dict) -> TradingAdapter:
     if isinstance(market, str):
         market = Market(market)
     mode = config.get("mode", "mock")
+    quote_provider = config.get("quote_provider", "mock")
+    
+    # 行情源 = akshare 时，用 AkshareAdapter（行情真 + 交易模拟）
+    if quote_provider == "akshare":
+        from app.sdk.akshare_adapter import AkshareAdapter
+        return AkshareAdapter(market=market, config=config)
+    
     if mode == "mock":
         return MockTradingAdapter(market=market, config=config)
     if market == Market.STOCK and mode == "real":

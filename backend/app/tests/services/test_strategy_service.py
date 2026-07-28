@@ -8,7 +8,7 @@ import pytest
 
 from app.api.response import BizError
 from app.repositories.strategy_repo import StrategyRepository, StrategyRunRepository
-from app.schemas.enums import StrategyRunStatus, SystemStatus
+from app.schemas.enums import Market, StrategyRunStatus, SystemStatus
 from app.services.strategy_service import strategy_service
 from app.services.system_service import SystemStateService
 from app.strategies.registry import import_samples
@@ -111,6 +111,65 @@ def test_start_blocked_when_system_stopped(db, reset_system_state):
     with pytest.raises(BizError) as exc:
         strategy_service.start(db, "ma_cross", confirm=True, correlation_id="test_blocked")
     assert exc.value.code == "RISK_SYSTEM_STOPPED"
+
+
+@pytest.mark.integration
+def test_strategy_error_auto_stop(db, reset_system_state, monkeypatch):
+    """连续异常达阈值后写 system_events 并从运行列表移除。"""
+    from app.db.models.system_event import SystemEvent
+    from app.repositories.system_config_repo import SystemConfigRepository
+    from app.sdk.models import QuoteSnapshot
+
+    import_samples()
+    strategy_service.ensure_definitions(db)
+    SystemConfigRepository(db).upsert(
+        config_key="strategy_error_limit",
+        value="2",
+        description="测试用策略异常阈值",
+    )
+    system = SystemStateService(db, correlation_id="test_err")
+    system.transition(SystemStatus.TRADING, reason="test")
+    db.commit()
+
+    strategy_service.start(
+        db,
+        "ma_cross",
+        symbols=["600000.SH"],
+        confirm=True,
+        correlation_id="test_err",
+    )
+    db.commit()
+    assert "ma_cross" in strategy_service._running
+
+    running = strategy_service._running["ma_cross"]
+
+    def boom_quote(quote):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(running.instance, "on_quote", boom_quote)
+
+    quote = QuoteSnapshot(
+        symbol="600000.SH",
+        market=Market.STOCK,
+        last_price=Decimal("10"),
+        change_rate=Decimal("0"),
+        volume=Decimal("100"),
+        quote_time=datetime.now(timezone.utc),
+    )
+    strategy_service.dispatch_quote(quote)
+    strategy_service.dispatch_quote(quote)
+
+    assert "ma_cross" not in strategy_service._running
+    db.expire_all()
+    events = (
+        db.query(SystemEvent)
+        .filter(SystemEvent.event_code.in_(["STRATEGY_ERROR", "STRATEGY_AUTO_STOPPED"]))
+        .all()
+    )
+    assert any(e.event_code == "STRATEGY_ERROR" for e in events)
+    assert any(e.event_code == "STRATEGY_AUTO_STOPPED" for e in events)
+    run = StrategyRunRepository(db).list_runs(strategy_id="ma_cross", limit=1)[0][0]
+    assert run.status == StrategyRunStatus.FAILED
 
 
 @pytest.mark.unit

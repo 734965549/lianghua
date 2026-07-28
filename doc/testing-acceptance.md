@@ -220,35 +220,32 @@ class TestDuplicateSignalRule:
 
 ### 订单状态机测试
 
-> `backend/app/tests/services/test_order_service.py`
+> 实现：`order_service.VALID_TRANSITIONS` + `OrderService.transition()`，非法迁移抛 `ORDER_INVALID_TRANSITION`。
+> 系统状态机另见 `system_service.VALID_TRANSITIONS`（非法迁移抛 `RISK_INVALID_STATE_TRANSITION`）。
+> 单测：`backend/app/tests/services/test_order_service.py`（`test_order_state_machine_*`）。
 
 ```python
 import pytest
-from app.services.order_service import OrderService
-from app.sdk.models import OrderStatus
+from app.api.response import BizError
+from app.schemas.enums import OrderStatus
+from app.schemas.error_codes import ErrorCode
+from app.services.order_service import OrderService, VALID_TRANSITIONS
 
 
-class TestOrderStateMachine:
-    @pytest.mark.parametrize("from_status,to_status,allowed", [
-        (OrderStatus.PENDING_RISK, OrderStatus.RISK_REJECTED, True),
-        (OrderStatus.PENDING_RISK, OrderStatus.SUBMITTING, True),
-        (OrderStatus.SUBMITTING, OrderStatus.SUBMITTED, True),
-        (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED, True),
-        (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED, True),
-        (OrderStatus.SUBMITTED, OrderStatus.CANCELLED, True),
-        (OrderStatus.SUBMITTING, OrderStatus.FAILED, True),
-        (OrderStatus.FILLED, OrderStatus.CANCELLED, False),   # 已成交不能撤
-        (OrderStatus.CANCELLED, OrderStatus.FILLED, False),   # 已撤不能改成交
-        (OrderStatus.FILLED, OrderStatus.SUBMITTING, False),  # 不能回退
-    ])
-    def test_transition(self, from_status, to_status, allowed):
-        svc = OrderService(...)
-        if allowed:
-            assert svc.can_transition(from_status, to_status)
-        else:
-            assert not svc.can_transition(from_status, to_status)
-            with pytest.raises(BizError, match="RISK_INVALID_STATE_TRANSITION|ORDER_INVALID_TRANSITION"):
-                svc.transition(from_status, to_status)
+def test_order_state_machine_valid():
+    svc = OrderService()
+    order = Order(status=OrderStatus.PENDING_RISK, client_order_id="t1")
+    svc.transition(order, OrderStatus.SUBMITTING)
+    assert order.status == OrderStatus.SUBMITTING
+
+
+def test_order_state_machine_invalid():
+    svc = OrderService()
+    order = Order(status=OrderStatus.SUBMITTED, client_order_id="t2")
+    with pytest.raises(BizError) as exc:
+        svc.transition(order, OrderStatus.SUBMITTING)  # 不可回退
+    assert exc.value.code == ErrorCode.ORDER_INVALID_TRANSITION
+    assert OrderStatus.SUBMITTING not in VALID_TRANSITIONS[OrderStatus.SUBMITTED]
 ```
 
 ## 集成测试用例骨架
@@ -413,21 +410,21 @@ def test_restart_preserves_breaker_and_unknown_orders(test_db):
 
 ## 覆盖率目标
 
-| 模块 | 目标覆盖率 | 阶段 8 实测（约） |
-| --- | --- | --- |
-| `app/services/risk_rules.py` | ≥ 95% | ~88% |
-| `app/services/order_service.py` | ≥ 90% | ~74% |
-| `app/services/trade_service.py` | ≥ 90% | ~74% |
-| `app/sdk/mock_adapter.py` | ≥ 85% | ~79% |
-| `app/services/metrics_service.py` | ≥ 85% | ~95% |
-| `app/services/ai_report_service.py` | ≥ 85% | ~85% |
-| `app/services/strategy_service.py` | ≥ 80% | ~29%（待补） |
-| `app/api/routes/*` | ≥ 70% | 参差；history/ai 已补 |
-| 整体 | ≥ 80% | **~74%** |
+| 模块 | 目标覆盖率 | 补测前 | 补测后（2026-07-20） |
+| --- | --- | --- | --- |
+| `app/services/risk_rules.py` | ≥ 95% | 91% | **100%** ✅ |
+| `app/services/order_service.py` | ≥ 90% | 78% | **100%** ✅ |
+| `app/services/trade_service.py` | ≥ 90% | 60% | **100%** ✅ |
+| `app/sdk/mock_adapter.py` | ≥ 85% | 84% | **100%** ✅ |
+| `app/services/metrics_service.py` | ≥ 85% | 95% | **95%** ✅ |
+| `app/services/ai_report_service.py` | ≥ 85% | 84% | **100%** ✅ |
+| `app/services/strategy_service.py` | ≥ 80% | 82% | **82%** ✅ |
+| `app/api/routes/*` | ≥ 70% | 参差；history/ai 已补 | 参差；history/ai 已补 |
+| 整体 | ≥ 80% | 81% | **85%** ✅（4917 statements，753 missed） |
 
 跑覆盖率：`pytest --cov=app --cov-report=html --cov-report=term-missing`
 
-> 阶段 8 结论：自动化用例全绿；整体覆盖率未达 80% 理想值，优先保障了风控/指标/复盘/历史关键路径。`strategy_service` 与部分路由深度覆盖作为后续改进项。
+> 2026-07-21 结论：`pytest` **170 passed**；整体覆盖率 **85%**。文档列出的关键服务模块均已达到或超过目标（含 P0-2 风控关口与 `mock_adapter` 边缘补测）。
 
 ## 手工验收脚本（真实 SDK 前）
 

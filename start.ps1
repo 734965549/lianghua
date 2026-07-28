@@ -1,4 +1,4 @@
-# start.ps1 —— 一键启动：检查 PostgreSQL + 后端 + 前端
+﻿# start.ps1 —— 一键启动：检查 PostgreSQL + 后端 + 前端
 # 用法（项目根目录）：.\start.ps1
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -41,9 +41,9 @@ if (-not (Test-Path $envFile)) {
 # 3. 启动后端（新窗口，默认 8000）
 $backendCmd = @"
 cd '$root\backend'
-`$ErrorActionPreference = 'Stop'
 .\.venv\Scripts\Activate.ps1
-alembic upgrade head
+Write-Host '执行数据库迁移...' -ForegroundColor Cyan
+alembic upgrade head 2>&1 | Out-Host
 Write-Host '后端: http://127.0.0.1:8000/api/health' -ForegroundColor Green
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 "@
@@ -52,10 +52,9 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
 # 4. 启动前端（新窗口）
 $frontendCmd = @"
 cd '$root\frontend'
-`$ErrorActionPreference = 'Stop'
 if (-not (Test-Path 'node_modules')) { npm install }
 Write-Host '前端: http://127.0.0.1:5173' -ForegroundColor Green
-npm run dev -- --host 127.0.0.1 --port 5173
+npm run dev
 "@
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $frontendCmd
 

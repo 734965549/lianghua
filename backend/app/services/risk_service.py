@@ -21,6 +21,7 @@ from app.repositories.risk_repo import RiskRepository
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.system_event_repo import SystemEventRepository
 from app.schemas.enums import Market, OrderStatus, RiskResult, Severity, SystemStatus
+from app.schemas.error_codes import ErrorCode
 from app.sdk import manager as sdk_manager
 from app.sdk.models import PlaceOrderRequest
 from app.services.audit_service import AuditService
@@ -56,7 +57,8 @@ class RiskService:
         *,
         signal_id: UUID | None = None,
         exclude_signal_id: UUID | None = None,
-    ) -> tuple[bool, list[RuleResult]]:
+    ) -> tuple[bool, list[RuleResult], UUID]:
+        """执行风控规则。返回 (是否通过, 规则结果, check_id)。"""
         ctx = self._build_context(request, exclude_signal_id=exclude_signal_id)
         results: list[RuleResult] = []
         passed = True
@@ -111,7 +113,7 @@ class RiskService:
                 },
                 correlation_id=self.correlation_id,
             )
-        return passed, results
+        return passed, results, check_row.check_id
 
     def _build_context(
         self,
@@ -136,10 +138,12 @@ class RiskService:
         window = int(risk_config.get("duplicate_signal_window_seconds", 3))
         strategy_id = request.metadata.get("strategy_id", "")
         side = request.side
+        action = request.action
         recent_rows = self.signal_repo.recent_duplicates(
             strategy_id=strategy_id,
             symbol=request.symbol,
             side=side,
+            action=action,
             window_seconds=window,
             now=now,
         )
@@ -148,6 +152,7 @@ class RiskService:
                 "strategy_id": row.strategy_id,
                 "symbol": row.symbol,
                 "side": row.side.value,
+                "action": row.action.value,
                 "ts": row.signal_time.timestamp(),
             }
             for row in recent_rows
@@ -246,7 +251,7 @@ class RiskService:
     def get_settings(self) -> dict:
         return self.repo.config_to_dict()
 
-    def update_settings(self, updates: dict) -> dict:
+    def update_settings(self, updates: dict, *, reason: str = "") -> dict:
         normalized: dict = {}
         decimal_fields = {
             "max_order_amount",
@@ -256,7 +261,7 @@ class RiskService:
             "daily_loss_limit",
         }
         for key, value in updates.items():
-            if value is None:
+            if value is None or key == "reason":
                 continue
             if key in decimal_fields:
                 normalized[key] = Decimal(str(value))
@@ -269,6 +274,7 @@ class RiskService:
             object_type="risk_config",
             object_id="1",
             result="success",
+            reason=reason,
             request_summary=updates,
         )
         return self.repo.config_to_dict(row)
@@ -359,7 +365,7 @@ class RiskService:
     def emergency_stop(self, reason: str, cancel_open_orders: bool = True) -> dict:
         status = self.system.get_status()["status"]
         if status == SystemStatus.EMERGENCY_STOPPED.value:
-            raise BizError("RISK_ALREADY_STOPPED", "系统已处于紧急停止状态")
+            raise BizError(ErrorCode.RISK_ALREADY_STOPPED, "系统已处于紧急停止状态")
 
         self.system.transition(SystemStatus.EMERGENCY_STOPPED, reason=reason)
         self.db.flush()
@@ -426,13 +432,8 @@ class RiskService:
             request_summary={"cancelled_orders": cancelled},
         )
         broadcast_sync(
-            "breaker",
-            {"type": "breaker", "reason": reason, "cancelled_orders": cancelled},
-            correlation_id=self.correlation_id,
-        )
-        broadcast_sync(
             "risk.event",
-            {"event": "circuit_breaker", "reason": reason, "cancelled_orders": cancelled},
+            {"type": "breaker", "reason": reason, "cancelled_orders": cancelled},
             correlation_id=self.correlation_id,
         )
         logger.warning("熔断触发: %s (撤单 %d)", reason, cancelled)
@@ -463,9 +464,17 @@ class RiskService:
         limit = Decimal(str(config.get("daily_loss_limit", "0") or "0"))
         if limit > 0 and self._today_loss() >= limit:
             blockers.append("当日亏损仍超过恢复阈值")
+        fail_limit = int(config.get("consecutive_order_fail_limit", 5) or 5)
+        if fail_limit > 0 and runtime_metrics.get_consecutive_order_fail() >= fail_limit:
+            blockers.append("连续下单失败仍超过恢复阈值")
+        trade_limit = int(config.get("daily_trade_count_limit", 0) or 0)
+        if trade_limit > 0 and self._today_trade_count() >= trade_limit:
+            blockers.append("当日交易次数仍超过恢复阈值")
         return blockers
 
     def resume(self, reason: str) -> dict:
+        if not (reason or "").strip():
+            raise BizError(ErrorCode.RISK_RESUME_REASON_REQUIRED, "恢复交易必须填写原因")
         status = self.system.get_status()
         current = status["status"]
         if current not in {
@@ -473,23 +482,23 @@ class RiskService:
             SystemStatus.EMERGENCY_STOPPED.value,
             SystemStatus.PAUSED.value,
         }:
-            raise BizError("RISK_RESUME_BLOCKED", f"当前状态 {current} 不支持恢复交易")
+            raise BizError(ErrorCode.RISK_RESUME_BLOCKED, f"当前状态 {current} 不支持恢复交易")
 
         blockers = self._collect_resume_blockers()
         if blockers:
             if any("unknown" in b for b in blockers):
                 raise BizError(
-                    "RISK_UNKNOWN_ORDERS_PENDING",
+                    ErrorCode.RISK_UNKNOWN_ORDERS_PENDING,
                     "存在未知订单未处理，禁止恢复交易",
                     debug="; ".join(blockers),
                 )
             raise BizError(
-                "RISK_RESUME_BLOCKED",
+                ErrorCode.RISK_RESUME_BLOCKED,
                 "恢复被阻止：" + "；".join(blockers),
                 debug="; ".join(blockers),
             )
 
-        self.system.transition(SystemStatus.TRADING, reason=reason or "用户恢复交易")
+        self.system.transition(SystemStatus.TRADING, reason=reason.strip())
         resumed_at = datetime.now(timezone.utc).isoformat()
         self.audit.log(
             action="risk_resume",
@@ -497,11 +506,11 @@ class RiskService:
             object_type="system_state",
             object_id="1",
             result="success",
-            reason=reason,
+            reason=reason.strip(),
         )
         broadcast_sync(
             "risk.event",
-            {"event": "resume", "reason": reason, "resumed_at": resumed_at},
+            {"type": "resume", "reason": reason.strip(), "resumed_at": resumed_at},
             correlation_id=self.correlation_id,
         )
         return {
@@ -554,14 +563,59 @@ class RiskService:
         return runtime_metrics.get_consecutive_order_fail() >= limit
 
     def _order_state_inconsistent(self) -> bool:
-        """订单状态不一致：filled_quantity > quantity，或终态仍有未对账异常。"""
-        bad = (
+        """成交回报与订单状态不一致：超量成交、终态数量不符、成交汇总与 filled 不符。"""
+        if (
             self.db.query(Order)
             .filter(Order.filled_quantity > Order.quantity)
             .limit(1)
             .first()
+        ) is not None:
+            return True
+
+        # 已标记 FILLED 但成交量仍不足
+        if (
+            self.db.query(Order)
+            .filter(
+                Order.status == OrderStatus.FILLED,
+                Order.filled_quantity < Order.quantity,
+            )
+            .limit(1)
+            .first()
+        ) is not None:
+            return True
+
+        # 非终态却显示已全部成交
+        open_statuses = [
+            OrderStatus.SUBMITTING,
+            OrderStatus.SUBMITTED,
+            OrderStatus.PARTIALLY_FILLED,
+        ]
+        if (
+            self.db.query(Order)
+            .filter(
+                Order.status.in_(open_statuses),
+                Order.filled_quantity >= Order.quantity,
+                Order.quantity > 0,
+            )
+            .limit(1)
+            .first()
+        ) is not None:
+            return True
+
+        # 成交汇总与订单 filled_quantity 不一致
+        trade_sums = (
+            self.db.query(Trade.client_order_id, func.sum(Trade.quantity).label("qty"))
+            .group_by(Trade.client_order_id)
+            .subquery()
         )
-        return bad is not None
+        mismatch = (
+            self.db.query(Order)
+            .join(trade_sums, Order.client_order_id == trade_sums.c.client_order_id)
+            .filter(Order.filled_quantity != trade_sums.c.qty)
+            .limit(1)
+            .first()
+        )
+        return mismatch is not None
 
     def check_breaker_conditions(self) -> str | None:
         """检查熔断条件，命中则触发并返回原因。"""

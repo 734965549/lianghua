@@ -14,11 +14,15 @@ from app.sdk.models import (
     CancelOrderResult,
     ConnectionEvent,
     KlineBar,
+    OrderQuery,
+    OrderSnapshot,
     OrderUpdateEvent,
     PlaceOrderRequest,
     PlaceOrderResult,
     PositionSnapshot,
     QuoteSnapshot,
+    TradeQuery,
+    TradeSnapshot,
     TradeUpdateEvent,
 )
 
@@ -139,24 +143,30 @@ class ThsTradingAdapterBase(TradingAdapter):
         raw = self._driver.cancel_order({"OrderID": sdk_order_id})
         return mapping.map_cancel_result(raw, client_order_id=request.client_order_id)
 
-    def query_orders(self, filters: dict) -> list[dict]:
-        rows = self._driver.query_orders(filters or {})
+    def query_orders(self, filters: OrderQuery | dict | None = None) -> list[OrderSnapshot]:
+        from app.sdk.models import coerce_order_snapshots
+
+        q = filters if isinstance(filters, dict) else (filters.model_dump(exclude_none=True) if filters else {})
+        rows = self._driver.query_orders(q or {})
         result = []
         for raw in rows:
             sdk_id = str(raw.get("OrderID") or "")
             client_id = raw.get("LocalRef") or self._resolve_client_id(sdk_id)
             result.append(mapping.map_query_order_row(raw, client_order_id=client_id))
-        return result
+        return coerce_order_snapshots(result)
 
-    def query_trades(self, filters: dict) -> list[dict]:
-        rows = self._driver.query_trades(filters or {})
+    def query_trades(self, filters: TradeQuery | dict | None = None) -> list[TradeSnapshot]:
+        from app.sdk.models import coerce_trade_snapshots
+
+        q = filters if isinstance(filters, dict) else (filters.model_dump(exclude_none=True) if filters else {})
+        rows = self._driver.query_trades(q or {})
         out = []
         for raw in rows:
             sdk_id = str(raw.get("OrderID") or "")
             client_id = raw.get("LocalRef") or self._resolve_client_id(sdk_id)
             event = mapping.map_trade_update(raw, market=self.market, client_order_id=client_id)
-            out.append(event.model_dump())
-        return out
+            out.append(event)
+        return coerce_trade_snapshots(out)
 
     def _handle_raw_order(self, raw: dict) -> None:
         sdk_id = str(raw.get("OrderID") or "")

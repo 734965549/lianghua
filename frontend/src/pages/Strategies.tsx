@@ -1,33 +1,17 @@
 import { useMemo, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Card, Drawer, Form, Table, Tag, Typography, Button, message } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
 import RiskCheckDrawer, { type RiskCheckItem } from "../components/RiskCheckDrawer";
+import StrategyTable, { type StrategyRow } from "../components/StrategyTable";
+import StrategyParamForm, {
+  buildParametersFromForm,
+  getInitialFormValues,
+} from "../components/StrategyParamForm";
 import type { Paged } from "../api/types";
 
-type Strategy = {
-  strategy_id: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-  running: boolean;
-  supported_markets: string[];
-  parameters: Record<string, unknown>;
-};
+type Strategy = StrategyRow;
 
 type Signal = {
   signal_id: string;
@@ -56,8 +40,11 @@ export default function Strategies() {
   const [paramOpen, setParamOpen] = useState(false);
   const [current, setCurrent] = useState<Strategy | null>(null);
   const [form] = Form.useForm();
+  const [paramInitial, setParamInitial] = useState<Record<string, unknown>>({});
   const [checkOpen, setCheckOpen] = useState(false);
   const [activeCheck, setActiveCheck] = useState<RiskCheckItem | null>(null);
+  const [startTarget, setStartTarget] = useState<Strategy | null>(null);
+  const [startMode, setStartMode] = useState<"start" | "restart">("start");
 
   const strategies = useQuery({
     queryKey: ["strategies"],
@@ -101,8 +88,8 @@ export default function Strategies() {
   }, [checks.data]);
 
   const start = useMutation({
-    mutationFn: (id: string) =>
-      api.post(`/strategies/${id}/start`, { confirm: true, symbols: ["600000.SH"] }),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post(`/strategies/${id}/start`, { confirm: true, reason }),
     onSuccess: () => {
       message.success("策略已启动");
       qc.invalidateQueries({ queryKey: ["strategies"] });
@@ -111,16 +98,9 @@ export default function Strategies() {
     },
   });
 
-  const confirmRestart = (row: Strategy) => {
-    const pending = pendingByStrategy.get(row.strategy_id);
-    Modal.confirm({
-      title: "确认重启策略？",
-      content: pending
-        ? `进程重启前策略 ${row.name} 曾运行中（${pending.stop_reason || "待确认"}）。确认环境正常后重新启动。`
-        : "确认环境正常后重新启动策略。",
-      okText: "确认重启",
-      onOk: () => start.mutateAsync(row.strategy_id),
-    });
+  const openStartConfirm = (row: Strategy, mode: "start" | "restart" = "start") => {
+    setStartMode(mode);
+    setStartTarget(row);
   };
 
   const stop = useMutation({
@@ -132,19 +112,10 @@ export default function Strategies() {
   });
 
   const saveParams = useMutation({
-    mutationFn: (values: Record<string, unknown>) =>
-      api.put(`/strategies/${current!.strategy_id}/parameters`, {
-        parameters: {
-          symbols: String(values.symbols || "600000.SH")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-          fast: values.fast,
-          slow: values.slow,
-          interval: values.interval || "1m",
-          quantity: String(values.quantity ?? "100"),
-        },
-      }),
+    mutationFn: (values: Record<string, unknown>) => {
+      const parameters = buildParametersFromForm(current?.parameters_schema, values);
+      return api.put(`/strategies/${current!.strategy_id}/parameters`, { parameters });
+    },
     onSuccess: () => {
       message.success("参数已保存");
       setParamOpen(false);
@@ -154,14 +125,9 @@ export default function Strategies() {
 
   const openParams = (s: Strategy) => {
     setCurrent(s);
-    const p = s.parameters || {};
-    form.setFieldsValue({
-      symbols: Array.isArray(p.symbols) ? (p.symbols as string[]).join(",") : "600000.SH",
-      fast: Number(p.fast ?? 5),
-      slow: Number(p.slow ?? 20),
-      interval: String(p.interval ?? "1m"),
-      quantity: Number(p.quantity ?? 100),
-    });
+    const initial = getInitialFormValues(s.parameters_schema, s.parameters || {});
+    setParamInitial(initial);
+    form.setFieldsValue(initial);
     setParamOpen(true);
   };
 
@@ -185,68 +151,14 @@ export default function Strategies() {
       ) : null}
 
       <Card title="策略列表" size="small" style={{ marginBottom: 16 }}>
-        <Table
-          rowKey="strategy_id"
-          size="small"
-          loading={strategies.isLoading}
+        <StrategyTable
           dataSource={strategies.data ?? []}
-          pagination={false}
-          columns={[
-            { title: "ID", dataIndex: "strategy_id", width: 120 },
-            { title: "名称", dataIndex: "name", width: 140 },
-            { title: "说明", dataIndex: "description" },
-            {
-              title: "状态",
-              width: 140,
-              render: (_, row) => {
-                const pending = pendingByStrategy.get(row.strategy_id);
-                if (row.running) {
-                  return <Tag color="green">运行中</Tag>;
-                }
-                if (pending) {
-                  return <Tag color="orange">待确认重启</Tag>;
-                }
-                return <Tag>已停止</Tag>;
-              },
-            },
-            {
-              title: "操作",
-              width: 300,
-              render: (_, row) => {
-                const pending = pendingByStrategy.get(row.strategy_id);
-                return (
-                <Space>
-                  <Button size="small" onClick={() => openParams(row)}>
-                    参数
-                  </Button>
-                  {row.running ? (
-                    <Button size="small" danger onClick={() => stop.mutate(row.strategy_id)}>
-                      停止
-                    </Button>
-                  ) : pending ? (
-                    <Button size="small" type="primary" onClick={() => confirmRestart(row)}>
-                      确认重启
-                    </Button>
-                  ) : (
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() =>
-                        Modal.confirm({
-                          title: "确认启动实盘策略？",
-                          content: "启动后系统将进入 trading，信号经风控后自动下单。",
-                          onOk: () => start.mutateAsync(row.strategy_id),
-                        })
-                      }
-                    >
-                      启动
-                    </Button>
-                  )}
-                </Space>
-                );
-              },
-            },
-          ]}
+          loading={strategies.isLoading}
+          pendingByStrategy={pendingByStrategy}
+          onOpenParams={openParams}
+          onStart={(row) => openStartConfirm(row, "start")}
+          onRestart={(row) => openStartConfirm(row, "restart")}
+          onStop={(row) => stop.mutate(row.strategy_id)}
         />
       </Card>
 
@@ -296,29 +208,42 @@ export default function Strategies() {
         onClose={() => setParamOpen(false)}
         width={420}
       >
-        <Form form={form} layout="vertical" onFinish={(v) => saveParams.mutate(v)}>
-          <Form.Item name="symbols" label="标的（逗号分隔）" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="fast" label="快线" rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="slow" label="慢线" rules={[{ required: true }]}>
-            <InputNumber min={2} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="interval" label="周期">
-            <Input placeholder="1m / 5m" />
-          </Form.Item>
-          <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: "100%" }} />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={saveParams.isPending} block>
-            保存参数
-          </Button>
-        </Form>
+        <StrategyParamForm
+          schema={current?.parameters_schema}
+          form={form}
+          initialValues={paramInitial}
+          loading={saveParams.isPending}
+          onFinish={(v) => saveParams.mutate(v)}
+        />
       </Drawer>
 
       <RiskCheckDrawer open={checkOpen} onClose={() => setCheckOpen(false)} check={activeCheck} />
+
+      <ConfirmDialog
+        open={!!startTarget}
+        title={startMode === "restart" ? "确认重启策略？" : "确认启动实盘策略？"}
+        impact={
+          startMode === "restart"
+            ? (() => {
+                const pending = startTarget
+                  ? pendingByStrategy.get(startTarget.strategy_id)
+                  : undefined;
+                return pending
+                  ? `进程重启前策略 ${startTarget?.name} 曾运行中（${pending.stop_reason || "待确认"}）。将启动实盘策略，可能产生真实委托。`
+                  : "将启动实盘策略，可能产生真实委托。确认环境正常后重新启动。";
+              })()
+            : "将启动实盘策略，可能产生真实委托。启动后系统将进入 trading，信号经风控后自动下单。"
+        }
+        okText={startMode === "restart" ? "确认重启" : "确认启动"}
+        danger
+        confirmLoading={start.isPending}
+        onCancel={() => setStartTarget(null)}
+        onConfirm={async (reason) => {
+          if (!startTarget) return;
+          await start.mutateAsync({ id: startTarget.strategy_id, reason });
+          setStartTarget(null);
+        }}
+      />
     </div>
   );
 }

@@ -272,9 +272,14 @@ class TotalPositionRule(RiskRule):
 
     def check(self, ctx: RiskContext) -> RuleResult:
         limit = Decimal(str(ctx.risk_config.get("max_total_position", 0)))
-        total = sum(Decimal(str(p["quantity"])) * Decimal(str(p.get("market_value", 0)))
-                    for p in ctx.positions)
-        if total > limit:
+        total = sum(Decimal(str(p.get("market_value", 0))) for p in ctx.positions)
+        # 买入时计入本次新委托敞口（price * quantity）
+        side = ctx.request.side.value if hasattr(ctx.request.side, "value") else ctx.request.side
+        if side == "buy":
+            price = ctx.request.price or ctx.latest_price or Decimal("0")
+            if price > 0:
+                total += price * ctx.request.quantity
+        if limit > 0 and total > limit:
             return RuleResult(self.rule_code, "rejected",
                               f"总仓位 {total} 超过上限 {limit}")
         return RuleResult(self.rule_code, "passed")

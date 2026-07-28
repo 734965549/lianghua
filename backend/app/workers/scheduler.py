@@ -4,7 +4,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.db.session import SessionLocal
 from app.workers.breaker_monitor import check_breaker_conditions
-from app.workers.sync_jobs import check_quote_stale, sync_assets, sync_orders_trades, sync_positions
+from app.workers.data_quality import run_quality_check
+from app.workers.retention import run_retention_cleanup
+from app.workers.sync_jobs import (
+    check_quote_stale,
+    run_daily_klines_update,
+    run_intraday_klines_sync,
+    sync_assets,
+    sync_orders_trades,
+    sync_positions,
+    sync_watchlist_subscriptions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +76,63 @@ def _run_sync_orders_trades() -> None:
         db.close()
 
 
+def _run_retention_cleanup() -> None:
+    db = SessionLocal()
+    try:
+        run_retention_cleanup(db, correlation_id="scheduler_retention")
+    except Exception:
+        logger.exception("retention_cleanup 执行失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _run_daily_klines_update() -> None:
+    db = SessionLocal()
+    try:
+        run_daily_klines_update(db)
+    except Exception:
+        logger.exception("daily_klines_update 执行失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _run_intraday_klines_sync() -> None:
+    db = SessionLocal()
+    try:
+        run_intraday_klines_sync(db)
+    except Exception:
+        logger.exception("intraday_klines_sync 执行失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _run_data_quality_check() -> None:
+    db = SessionLocal()
+    try:
+        run_quality_check(db, correlation_id="scheduler_quality")
+        db.commit()
+    except Exception:
+        logger.exception("data_quality_check 执行失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _run_watchlist_subscription_sync() -> None:
+    db = SessionLocal()
+    try:
+        sync_watchlist_subscriptions(db)
+        db.commit()
+    except Exception:
+        logger.exception("quote_subscription_sync 执行失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -76,6 +143,17 @@ def start_scheduler() -> AsyncIOScheduler:
     _scheduler.add_job(_run_sync_assets, "interval", seconds=15, id="sync_assets")
     _scheduler.add_job(_run_sync_orders_trades, "interval", seconds=5, id="sync_orders_trades")
     _scheduler.add_job(_run_breaker_check, "interval", seconds=10, id="breaker_check")
+    _scheduler.add_job(
+        _run_retention_cleanup,
+        "cron",
+        hour=3,
+        minute=30,
+        id="retention_cleanup",
+    )
+    _scheduler.add_job(_run_daily_klines_update, "cron", hour=15, minute=30, id="daily_klines_update")
+    _scheduler.add_job(_run_intraday_klines_sync, "interval", minutes=5, id="intraday_klines_sync")
+    _scheduler.add_job(_run_data_quality_check, "cron", hour=8, minute=0, id="data_quality_check")
+    _scheduler.add_job(_run_watchlist_subscription_sync, "interval", seconds=60, id="quote_subscription_sync")
     _scheduler.start()
     logger.info("AsyncIOScheduler 已启动")
     return _scheduler

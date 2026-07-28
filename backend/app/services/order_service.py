@@ -9,10 +9,12 @@ from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
 from app.db.models.order import Order
 from app.db.models.strategy_signal import StrategySignal
-from app.db.session import SessionLocal
+from app.db import session as db_session
 from app.repositories.account_repo import AccountRepository
 from app.repositories.order_repo import OrderRepository
-from app.schemas.enums import OrderStatus, Severity
+from app.repositories.risk_repo import RiskRepository
+from app.schemas.enums import OrderStatus, RiskResult, Severity
+from app.schemas.error_codes import ErrorCode
 from app.sdk.models import OrderUpdateEvent, PlaceOrderRequest
 from app.services.audit_service import AuditService
 
@@ -31,6 +33,11 @@ VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
         OrderStatus.FILLED,
         OrderStatus.CANCELLED,
         OrderStatus.UNKNOWN,
+    },
+    OrderStatus.UNKNOWN: {
+        OrderStatus.CANCELLED,
+        OrderStatus.FILLED,
+        OrderStatus.FAILED,
     },
 }
 
@@ -81,7 +88,7 @@ class OrderService:
         allowed = VALID_TRANSITIONS.get(order.status, set())
         if new_status not in allowed and order.status != new_status:
             raise BizError(
-                "ORDER_INVALID_TRANSITION",
+                ErrorCode.ORDER_INVALID_TRANSITION,
                 f"非法订单状态迁移: {order.status.value} -> {new_status.value}",
             )
         order.status = new_status
@@ -93,6 +100,7 @@ class OrderService:
         signal_row: StrategySignal,
         place_req: PlaceOrderRequest,
         *,
+        check_id: UUID,
         correlation_id: str = "",
     ) -> Order:
         account_repo = AccountRepository(db)
@@ -100,6 +108,22 @@ class OrderService:
 
         now = datetime.now(timezone.utc)
         client_order_id = place_req.client_order_id or f"lh_{now:%Y%m%d}_{uuid4().hex[:8]}"
+
+        risk_check = RiskRepository(db).get_check(check_id)
+        if risk_check is None:
+            raise BizError(ErrorCode.RISK_CHECK_REQUIRED, f"风控记录不存在: {check_id}", status=400)
+        if risk_check.result != RiskResult.PASSED:
+            raise BizError(
+                ErrorCode.RISK_CHECK_NOT_PASSED,
+                f"风控未通过，禁止建单: {risk_check.result.value}",
+                status=400,
+            )
+        if risk_check.client_order_id and risk_check.client_order_id != client_order_id:
+            raise BizError(
+                ErrorCode.RISK_CHECK_MISMATCH,
+                "风控记录与订单 client_order_id 不匹配",
+                status=400,
+            )
 
         order_repo = OrderRepository(db)
         existing = order_repo.get_by_client_order_id(client_order_id)
@@ -119,9 +143,11 @@ class OrderService:
             price_type=signal_row.price_type,
             price=Decimal(str(signal_row.price)),
             quantity=Decimal(str(signal_row.quantity)),
-            status=OrderStatus.SUBMITTING,
+            status=OrderStatus.PENDING_RISK,
             submitted_at=now,
         )
+        # 风控已通过：PENDING_RISK → SUBMITTING，再交由 trade_service 下单
+        self.transition(order, OrderStatus.SUBMITTING)
 
         audit = AuditService(db, correlation_id=correlation_id)
         audit.log(
@@ -178,10 +204,10 @@ class OrderService:
     ) -> Order:
         order = OrderRepository(db).get_by_client_order_id(client_order_id)
         if order is None:
-            raise BizError("ORDER_NOT_FOUND", f"订单不存在: {client_order_id}", status=404)
+            raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {client_order_id}", status=404)
         if order.status not in CANCELLABLE:
             raise BizError(
-                "ORDER_NOT_CANCELLABLE",
+                ErrorCode.ORDER_NOT_CANCELLABLE,
                 f"当前状态不可撤单: {order.status.value}",
             )
         db.commit()
@@ -204,20 +230,19 @@ class OrderService:
 
         order = OrderRepository(db).get_by_client_order_id(client_order_id)
         if order is None:
-            raise BizError("ORDER_NOT_FOUND", f"订单不存在: {client_order_id}", status=404)
+            raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {client_order_id}", status=404)
         if order.status != OrderStatus.UNKNOWN:
             raise BizError(
-                "ORDER_NOT_UNKNOWN",
+                ErrorCode.ORDER_NOT_UNKNOWN,
                 f"仅 unknown 状态订单可人工确认，当前: {order.status.value}",
             )
         if resolved_status not in UNKNOWN_RESOLVABLE:
             raise BizError(
-                "ORDER_INVALID_RESOLVED_STATUS",
+                ErrorCode.ORDER_INVALID_RESOLVED_STATUS,
                 f"resolved_status 必须为 cancelled/filled/failed，收到: {resolved_status.value}",
             )
 
-        order.status = resolved_status
-        order.last_event_at = datetime.now(timezone.utc)
+        self.transition(order, resolved_status)
         order.fail_reason = reason or f"人工确认 unknown → {resolved_status.value}"
 
         events = (
@@ -262,7 +287,7 @@ class OrderService:
         return order
 
     def on_order_update(self, event: OrderUpdateEvent) -> None:
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             repo = OrderRepository(db)
             order = None
@@ -291,14 +316,18 @@ class OrderService:
                 try:
                     self.transition(order, target)
                 except BizError:
-                    if target in VALID_TRANSITIONS.get(current, set()):
-                        order.status = target
-                        order.last_event_at = event.event_time
-                    else:
+                    logger.warning(
+                        "订单状态迁移失败，标记 UNKNOWN: %s -> %s (%s)",
+                        current.value,
+                        target.value,
+                        order.client_order_id,
+                    )
+                    try:
+                        self.transition(order, OrderStatus.UNKNOWN)
+                    except BizError:
                         logger.warning(
-                            "忽略非法订单状态迁移: %s -> %s (%s)",
-                            current.value,
-                            target.value,
+                            "无法标记 UNKNOWN，保持原状态: %s (%s)",
+                            order.status.value,
                             order.client_order_id,
                         )
 

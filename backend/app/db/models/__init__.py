@@ -18,7 +18,8 @@ from app.db.models.strategy_run import StrategyRun
 from app.db.models.strategy_signal import StrategySignal
 from app.db.models.system_event import SystemEvent
 from app.db.models.system_state import SystemState
-from app.db.models.trade import Trade
+from app.db.models.data_sync_log import DataSyncLog
+from app.db.models.watchlist import WatchlistItem
 
 __all__ = [
     "Base",
@@ -40,4 +41,6 @@ __all__ = [
     "Order",
     "Trade",
     "Position",
+    "WatchlistItem",
+    "DataSyncLog",
 ]

@@ -53,6 +53,7 @@ def start_strategy(
         symbols=body.symbols or None,
         parameters=body.parameters,
         confirm=body.confirm,
+        reason=body.reason,
         correlation_id=correlation_id,
     )
     db.commit()

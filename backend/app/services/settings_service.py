@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.response import BizError
 from app.core.config import settings
 from app.repositories.system_config_repo import SystemConfigRepository
+from app.schemas.error_codes import ErrorCode
 from app.services.audit_service import AuditService
 
 SENSITIVE_FIELD_NAMES = [
@@ -155,7 +156,7 @@ class SettingsService:
             engine.dispose()
             return {"ok": True, "server_version": str(version)}
         except Exception as exc:
-            raise BizError("SYS_DATABASE_UNAVAILABLE", f"数据库连接失败: {exc}") from exc
+            raise BizError(ErrorCode.SYS_DATABASE_UNAVAILABLE, f"数据库连接失败: {exc}") from exc
 
     def test_sdk(self, market: str) -> dict:
         if settings.sdk_mode == "mock":
@@ -179,4 +180,4 @@ class SettingsService:
         except AdapterError as exc:
             raise BizError(exc.code, exc.message) from exc
         except Exception as exc:
-            raise BizError("SDK_CONNECTION_FAILED", f"SDK 连接测试失败: {exc}") from exc
+            raise BizError(ErrorCode.SDK_CONNECTION_FAILED, f"SDK 连接测试失败: {exc}") from exc

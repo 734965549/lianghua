@@ -5,13 +5,10 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.db.models.account import Account
 from app.db.models.order import Order
 from app.db.models.trade import Trade
-from app.db.session import SessionLocal
-from app.main import app
 from app.schemas.enums import (
     AccountStatus,
     Market,
@@ -23,14 +20,7 @@ from app.schemas.enums import (
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
-
-
-@pytest.fixture
-def seeded_history():
-    db = SessionLocal()
+def seeded_history(db):
     account = db.query(Account).filter(Account.market == Market.STOCK).first()
     if account is None:
         account = Account(
@@ -110,8 +100,6 @@ def seeded_history():
     db.add(trade_sell)
     db.commit()
     yield {"client_order_id": cid, "sell_client_order_id": trade_sell_cid}
-    # 保留数据供人工查看；测试库可定期清理
-    db.close()
 
 
 def test_history_orders_and_trades(client, seeded_history):

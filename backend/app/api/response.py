@@ -26,8 +26,8 @@ class PagedData(BaseModel, Generic[T]):
     total: int
 
 
-def ok(data: Any = None, correlation_id: str = "") -> dict:
-    return ApiResponse(success=True, data=data, error=None, correlation_id=correlation_id).model_dump()
+def ok(data: Any = None, correlation_id: str = "") -> ApiResponse:
+    return ApiResponse(success=True, data=data, error=None, correlation_id=correlation_id)
 
 
 def fail(
@@ -37,13 +37,17 @@ def fail(
     retryable: bool = False,
     debug: str | None = None,
     correlation_id: str = "",
-) -> dict:
+) -> ApiResponse:
+    from app.core.config import settings
+
+    # 仅开发环境向客户端返回 debug；生产环境剥离
+    safe_debug = None if settings.is_production else debug
     return ApiResponse(
         success=False,
         data=None,
-        error=ErrorDetail(code=code, message=message, retryable=retryable, debug=debug),
+        error=ErrorDetail(code=code, message=message, retryable=retryable, debug=safe_debug),
         correlation_id=correlation_id,
-    ).model_dump()
+    )
 
 
 class BizError(Exception):

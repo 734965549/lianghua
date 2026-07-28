@@ -1,11 +1,12 @@
-type EventTopic =
+export type EventTopic =
   | "system.status"
   | "quote.update"
   | "strategy.signal"
   | "order.update"
   | "trade.update"
   | "risk.event"
-  | "audit.event";
+  | "audit.event"
+  | "data.download.progress";
 
 type Handler = (data: unknown) => void;
 
@@ -19,6 +20,7 @@ class WsClient {
     "trade.update": [],
     "risk.event": [],
     "audit.event": [],
+    "data.download.progress": [],
   };
   private reconnectTimer: number | null = null;
   private shouldReconnect = true;

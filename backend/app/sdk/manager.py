@@ -11,6 +11,8 @@ def _sdk_config() -> dict:
     return {
         "mode": settings.sdk_mode,
         "sdk_driver": settings.sdk_driver,
+        "quote_provider": settings.quote_provider,
+        "akshare_poll_seconds": settings.akshare_poll_seconds,
         "stock_sdk_path": settings.stock_sdk_path,
         "futures_sdk_path": settings.futures_sdk_path,
         "stock_account": settings.stock_account,

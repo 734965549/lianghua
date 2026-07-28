@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Button,
@@ -6,7 +6,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Space,
   Switch,
   Typography,
@@ -14,6 +13,8 @@ import {
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
+import EmergencyStopButton from "../components/EmergencyStopButton";
 
 type RiskSettings = {
   allowed_symbols: string[];
@@ -44,9 +45,14 @@ type RiskStatus = {
   unknown_order_count: number;
 };
 
+type PendingAction =
+  | { type: "save"; values: Record<string, unknown> }
+  | { type: "resume" };
+
 export default function RiskSettings() {
   const [form] = Form.useForm();
   const qc = useQueryClient();
+  const [pending, setPending] = useState<PendingAction | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["risk-settings"],
@@ -74,8 +80,9 @@ export default function RiskSettings() {
   }, [data, form]);
 
   const save = useMutation({
-    mutationFn: (values: Record<string, unknown>) =>
+    mutationFn: ({ values, reason }: { values: Record<string, unknown>; reason: string }) =>
       api.put("/risk/settings", {
+        confirm: true,
         allowed_symbols: String(values.allowed_symbols || "")
           .split(",")
           .map((s) => s.trim())
@@ -95,6 +102,7 @@ export default function RiskSettings() {
         consecutive_order_fail_limit: values.consecutive_order_fail_limit,
         duplicate_signal_window_seconds: values.duplicate_signal_window_seconds,
         auto_cancel_on_breaker: values.auto_cancel_on_breaker,
+        reason,
       }),
     onSuccess: () => {
       message.success("风控参数已保存");
@@ -102,21 +110,8 @@ export default function RiskSettings() {
     },
   });
 
-  const emergency = useMutation({
-    mutationFn: () =>
-      api.post<{ status: string; cancelled_orders: number }>("/risk/emergency-stop", {
-        reason: "用户一键停止",
-        cancel_open_orders: true,
-      }),
-    onSuccess: (res) => {
-      message.warning(`已进入紧急停止（撤单 ${res?.cancelled_orders ?? 0} 笔）`);
-      qc.invalidateQueries({ queryKey: ["risk-status"] });
-      qc.invalidateQueries({ queryKey: ["system-status"] });
-    },
-  });
-
   const resume = useMutation({
-    mutationFn: () => api.post("/risk/resume", { confirm: true, reason: "用户恢复交易" }),
+    mutationFn: (reason: string) => api.post("/risk/resume", { confirm: true, reason }),
     onSuccess: () => {
       message.success("已恢复交易");
       qc.invalidateQueries({ queryKey: ["risk-status"] });
@@ -130,6 +125,26 @@ export default function RiskSettings() {
 
   const st = status.data;
   const unknownCount = st?.unknown_order_count ?? 0;
+
+  const dialogMeta =
+    pending?.type === "save"
+      ? {
+          title: "确认保存风控参数？",
+          impact: "风控参数变更可能影响交易安全与可成交范围。",
+          okText: "确认保存",
+          danger: false,
+        }
+      : pending?.type === "resume"
+        ? {
+            title: "确认恢复交易？",
+            impact:
+              unknownCount > 0
+                ? `当前有 ${unknownCount} 笔未知订单，恢复将被拒绝。将解除熔断/紧急停止前，请确认 SDK 与账户正常。`
+                : "将解除熔断/紧急停止，恢复交易前请确认 SDK 与账户正常。",
+            okText: "确认恢复",
+            danger: false,
+          }
+        : null;
 
   return (
     <div>
@@ -168,13 +183,7 @@ export default function RiskSettings() {
           form={form}
           layout="vertical"
           style={{ maxWidth: 720 }}
-          onFinish={(values) =>
-            Modal.confirm({
-              title: "确认保存风控参数？",
-              content: "风控参数变更可能影响交易安全与可成交范围。",
-              onOk: () => save.mutateAsync(values),
-            })
-          }
+          onFinish={(values) => setPending({ type: "save", values })}
         >
           <Form.Item name="allowed_symbols" label="白名单（逗号分隔，空=不限制）">
             <Input.TextArea rows={2} />
@@ -220,35 +229,30 @@ export default function RiskSettings() {
             <Button type="primary" htmlType="submit" loading={save.isPending}>
               保存风控参数
             </Button>
-            <Button
-              danger
-              onClick={() =>
-                Modal.confirm({
-                  title: "确认一键停止？",
-                  content: "将进入 emergency_stopped，禁止新委托，并默认撤销未成交委托。",
-                  onOk: () => emergency.mutateAsync(),
-                })
-              }
-            >
-              一键停止
-            </Button>
-            <Button
-              onClick={() =>
-                Modal.confirm({
-                  title: "确认恢复交易？",
-                  content:
-                    unknownCount > 0
-                      ? `当前有 ${unknownCount} 笔未知订单，恢复将被拒绝。`
-                      : "将校验 SDK / 数据库 / 未知订单等前置条件。",
-                  onOk: () => resume.mutateAsync(),
-                })
-              }
-            >
-              恢复交易
-            </Button>
+            <EmergencyStopButton />
+            <Button onClick={() => setPending({ type: "resume" })}>恢复交易</Button>
           </Space>
         </Form>
       </Card>
+
+      <ConfirmDialog
+        open={!!pending && !!dialogMeta}
+        title={dialogMeta?.title ?? ""}
+        impact={dialogMeta?.impact}
+        okText={dialogMeta?.okText}
+        danger={dialogMeta?.danger}
+        confirmLoading={save.isPending || resume.isPending}
+        onCancel={() => setPending(null)}
+        onConfirm={async (reason) => {
+          if (!pending) return;
+          if (pending.type === "save") {
+            await save.mutateAsync({ values: pending.values, reason });
+          } else {
+            await resume.mutateAsync(reason);
+          }
+          setPending(null);
+        }}
+      />
     </div>
   );
 }

@@ -19,6 +19,16 @@ class TradeRepository(BaseRepository[Trade]):
             .first()
         )
 
+    def sum_quantity_by_client_order_id(self, client_order_id: str) -> Decimal:
+        from sqlalchemy import func
+
+        total = (
+            self.db.query(func.coalesce(func.sum(Trade.quantity), 0))
+            .filter(Trade.client_order_id == client_order_id)
+            .scalar()
+        )
+        return Decimal(str(total or 0))
+
     def create_trade(
         self,
         *,

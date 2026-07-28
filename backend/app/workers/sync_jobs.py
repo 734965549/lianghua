@@ -223,9 +223,11 @@ def _mark_order_unknown(db: Session, order, *, raw_status, reason: str) -> None:
 
 
 def sync_orders_trades(db: Session) -> None:
-    """同步未完结订单：轮询 SDK，无法映射的状态置 unknown。"""
+    """同步未完结订单，并补拉成交回报（轮询通道）。"""
     from app.services import runtime_metrics
     from app.services.order_service import order_service, order_to_dict
+    from app.services.trade_service import trade_service
+    from app.sdk.models import TradeUpdateEvent
 
     if not market_service.started:
         return
@@ -241,18 +243,22 @@ def sync_orders_trades(db: Session) -> None:
             if row is not None:
                 by_id[cid] = row
 
-    if not by_id:
-        return
+    # 即使没有 open orders，也尝试补拉成交（防止回调丢失）
+    markets_needed = {o.market for o in by_id.values()} or {Market.STOCK, Market.FUTURES}
 
-    # 按市场批量查询 SDK
-    sdk_maps: dict[Market, dict[str, dict]] = {}
+    # 按市场批量查询 SDK 订单
+    sdk_maps: dict[Market, dict[str, object]] = {}
     for market in (Market.STOCK, Market.FUTURES):
+        if market not in markets_needed and by_id:
+            continue
         try:
             adapter = sdk_manager.get_adapter_for_market(market)
             rows = adapter.query_orders({})
-            mapping: dict[str, dict] = {}
+            mapping: dict[str, object] = {}
             for item in rows:
-                cid = item.get("client_order_id")
+                cid = getattr(item, "client_order_id", None)
+                if cid is None and isinstance(item, dict):
+                    cid = item.get("client_order_id")
                 if cid:
                     mapping[str(cid)] = item
             sdk_maps[market] = mapping
@@ -264,10 +270,15 @@ def sync_orders_trades(db: Session) -> None:
     for client_order_id, order in by_id.items():
         sdk_row = sdk_maps.get(order.market, {}).get(client_order_id)
         if sdk_row is None:
-            # 仍在 submitting 且尚无 SDK 映射：保留，等待回调
             continue
 
-        raw_status = sdk_row.get("status")
+        if hasattr(sdk_row, "status"):
+            raw_status = getattr(sdk_row, "status")
+            filled = getattr(sdk_row, "filled_quantity", None)
+        else:
+            raw_status = sdk_row.get("status")  # type: ignore[union-attr]
+            filled = sdk_row.get("filled") or sdk_row.get("filled_quantity")  # type: ignore[union-attr]
+
         mapped = _parse_sdk_order_status(raw_status)
         if mapped is None:
             _mark_order_unknown(
@@ -281,10 +292,8 @@ def sync_orders_trades(db: Session) -> None:
             continue
 
         if order.status == OrderStatus.UNKNOWN:
-            # 人工处理前不同步覆盖
             continue
 
-        filled = sdk_row.get("filled") or sdk_row.get("filled_quantity")
         if filled is not None:
             try:
                 fv = Decimal(str(filled))
@@ -317,7 +326,6 @@ def sync_orders_trades(db: Session) -> None:
             else:
                 broadcast_sync("order.update", order_to_dict(order))
 
-        # 终态移出同步队列
         if order.status in {
             OrderStatus.FILLED,
             OrderStatus.CANCELLED,
@@ -326,5 +334,93 @@ def sync_orders_trades(db: Session) -> None:
         }:
             runtime_metrics.dequeue_order_sync(client_order_id)
 
+    # 补拉成交回报（幂等写入）
+    for market in (Market.STOCK, Market.FUTURES):
+        try:
+            adapter = sdk_manager.get_adapter_for_market(market)
+            trades = adapter.query_trades({})
+        except Exception:
+            logger.exception("query_trades 失败: %s", market.value)
+            continue
+        for snap in trades:
+            try:
+                trade_time = getattr(snap, "trade_time", None) or datetime.now(timezone.utc)
+                side = getattr(snap, "side", None)
+                if side is None:
+                    continue
+                event = TradeUpdateEvent(
+                    sdk_trade_id=str(snap.sdk_trade_id),
+                    client_order_id=snap.client_order_id,
+                    sdk_order_id=snap.sdk_order_id,
+                    symbol=snap.symbol or "",
+                    market=snap.market or market,
+                    side=side,
+                    price=Decimal(str(snap.price)),
+                    quantity=Decimal(str(snap.quantity)),
+                    fee=Decimal(str(snap.fee or 0)),
+                    trade_time=trade_time,
+                    raw_payload=snap.raw_payload,
+                )
+                trade_service.on_trade_update(event)
+            except Exception:
+                logger.exception("轮询补拉成交失败: %s", getattr(snap, "sdk_trade_id", None))
+
     if changed:
         db.commit()
+
+
+def sync_watchlist_subscriptions(db: Session) -> None:
+    """同步股票池订阅到行情适配器。"""
+    if not market_service.started:
+        return
+    market_service.sync_watchlist_subscriptions(db)
+
+
+def _is_trading_hours() -> bool:
+    """简化的 A 股交易时段判断（UTC+8）。"""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc) + timedelta(hours=8)
+    if now.weekday() >= 5:
+        return False
+    minutes = now.hour * 60 + now.minute
+    return (570 <= minutes <= 690) or (780 <= minutes <= 900)
+
+
+def run_daily_klines_update(db: Session) -> None:
+    """收盘后增量拉取股票池日线。"""
+    from app.services.data_service import data_service
+    from app.workers.data_downloader import data_downloader
+
+    if data_downloader.is_running:
+        logger.info("跳过 daily_klines_update：已有下载任务")
+        return
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    data_service.trigger_download(
+        db,
+        symbols=None,
+        intervals=["1d"],
+        start_date=today,
+        end_date=today,
+        use_watchlist=True,
+    )
+
+
+def run_intraday_klines_sync(db: Session) -> None:
+    """盘中同步分钟线（仅交易时段）。"""
+    from app.services.data_service import data_service
+    from app.workers.data_downloader import data_downloader
+
+    if not _is_trading_hours():
+        return
+    if data_downloader.is_running:
+        return
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    data_service.trigger_download(
+        db,
+        symbols=None,
+        intervals=["1m"],
+        start_date=today,
+        end_date=today,
+        use_watchlist=True,
+    )

@@ -1,4 +1,4 @@
-# backup_db.ps1 —— 手动备份 PostgreSQL（UTF-8 SQL + gzip）
+﻿# backup_db.ps1 —— 手动备份 PostgreSQL（UTF-8 SQL + gzip）
 # 用法：在 backend 目录执行  .\scripts\backup_db.ps1
 # 依赖：PATH 中有 pg_dump（PostgreSQL 客户端工具）
 $ErrorActionPreference = "Stop"

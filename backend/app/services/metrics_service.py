@@ -59,6 +59,7 @@ class MetricsService:
                 "profit_loss_ratio": "0",
                 "max_drawdown": "0",
                 "trade_count": 0,
+                "trade_frequency": "0",
                 "fee_total": "0",
                 "slippage_estimate": "0",
                 "risk_reject_count": 0,
@@ -66,6 +67,8 @@ class MetricsService:
                 "consecutive_loss_count": 0,
                 "avg_holding_minutes": "0",
                 "round_trips": 0,
+                "by_strategy": {},
+                "strategy_ranking": [],
             }
 
         pnls = self._fifo_round_trip_pnls(trades)
@@ -83,6 +86,20 @@ class MetricsService:
         fee_total = sum((Decimal(str(t.get("fee") or 0)) for t in trades), Decimal("0"))
         # 已实现盈亏扣除手续费
         total_pnl = total_pnl - fee_total
+        by_strategy = self._by_strategy(trades)
+        ranking = sorted(
+            (
+                {
+                    "strategy_id": sid,
+                    "total_pnl": vals["total_pnl"],
+                    "trade_count": vals["trade_count"],
+                    "win_rate": vals["win_rate"],
+                }
+                for sid, vals in by_strategy.items()
+            ),
+            key=lambda x: Decimal(str(x["total_pnl"])),
+            reverse=True,
+        )
 
         return {
             "has_data": True,
@@ -92,6 +109,7 @@ class MetricsService:
             "profit_loss_ratio": str(profit_loss_ratio),
             "max_drawdown": "0",
             "trade_count": len(trades),
+            "trade_frequency": str(self._trade_frequency(trades)),
             "fee_total": str(fee_total),
             "slippage_estimate": str(self._estimate_slippage(trades)),
             "risk_reject_count": 0,
@@ -99,6 +117,8 @@ class MetricsService:
             "consecutive_loss_count": self._max_consecutive_loss(pnls),
             "avg_holding_minutes": str(self._avg_holding_minutes(trades)),
             "round_trips": len(pnls),
+            "by_strategy": by_strategy,
+            "strategy_ranking": ranking,
         }
 
     def _fifo_round_trip_pnls(self, trades: list[dict]) -> list[Decimal]:
@@ -226,3 +246,38 @@ class MetricsService:
         if not holds:
             return Decimal("0")
         return sum(holds, Decimal("0")) / Decimal(len(holds))
+
+    def _trade_frequency(self, trades: list[dict]) -> Decimal:
+        """日均成交笔数 = trade_count / 覆盖自然日数（至少 1 天）。"""
+        if not trades:
+            return Decimal("0")
+        days: set[str] = set()
+        for t in trades:
+            tt = t.get("trade_time")
+            if isinstance(tt, datetime):
+                days.add(tt.date().isoformat())
+            elif tt:
+                days.add(str(tt)[:10])
+        day_count = max(len(days), 1)
+        return (Decimal(len(trades)) / Decimal(day_count)).quantize(Decimal("0.01"))
+
+    def _by_strategy(self, trades: list[dict]) -> dict:
+        groups: dict[str, list[dict]] = defaultdict(list)
+        for t in trades:
+            sid = str(t.get("strategy_id") or "unknown")
+            groups[sid].append(t)
+        out: dict[str, dict] = {}
+        for sid, group in groups.items():
+            pnls = self._fifo_round_trip_pnls(group)
+            fee = sum((Decimal(str(t.get("fee") or 0)) for t in group), Decimal("0"))
+            total = sum(pnls, Decimal("0")) - fee
+            wins = [p for p in pnls if p > 0]
+            win_rate = Decimal(len(wins)) / Decimal(len(pnls)) if pnls else Decimal("0")
+            out[sid] = {
+                "total_pnl": str(total),
+                "trade_count": len(group),
+                "round_trips": len(pnls),
+                "win_rate": str(win_rate),
+                "fee_total": str(fee),
+            }
+        return out

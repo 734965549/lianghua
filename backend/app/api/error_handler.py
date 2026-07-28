@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.response import BizError, fail
+from app.schemas.error_codes import ErrorCode
 
 
 def _cid(request: Request) -> str:
@@ -21,7 +22,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 retryable=exc.retryable,
                 debug=exc.debug,
                 correlation_id=_cid(request),
-            ),
+            ).model_dump(),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -29,20 +30,20 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content=fail(
-                "SYS_VALIDATION_ERROR",
+                ErrorCode.SYS_VALIDATION_ERROR,
                 "请求参数校验失败",
                 debug=str(exc.errors()),
                 correlation_id=_cid(request),
-            ),
+            ).model_dump(),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error_handler(request: Request, exc: StarletteHTTPException):
-        code = "SYS_NOT_FOUND" if exc.status_code == 404 else "SYS_HTTP_ERROR"
+        code = ErrorCode.SYS_NOT_FOUND if exc.status_code == 404 else ErrorCode.SYS_HTTP_ERROR
         detail = exc.detail if isinstance(exc.detail, str) else "请求失败"
         return JSONResponse(
             status_code=exc.status_code,
-            content=fail(code, detail, correlation_id=_cid(request)),
+            content=fail(code, detail, correlation_id=_cid(request)).model_dump(),
         )
 
     @app.exception_handler(Exception)
@@ -50,9 +51,9 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=500,
             content=fail(
-                "SYS_INTERNAL_ERROR",
+                ErrorCode.SYS_INTERNAL_ERROR,
                 "服务器内部错误",
                 debug=str(exc),
                 correlation_id=_cid(request),
-            ),
+            ).model_dump(),
         )

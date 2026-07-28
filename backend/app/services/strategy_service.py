@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
-from app.db.session import SessionLocal
+from app.db import session as db_session
 from app.repositories.market_repo import MarketRepository
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.strategy_repo import StrategyRepository, StrategyRunRepository
-from app.schemas.enums import Market, StrategyRunStatus, SystemStatus
+from app.repositories.system_event_repo import SystemEventRepository
+from app.schemas.enums import Market, Severity, StrategyRunStatus, SystemStatus
+from app.schemas.error_codes import ErrorCode
 from app.sdk.models import KlineBar, PlaceOrderRequest, QuoteSnapshot
 from app.services.audit_service import AuditService
 from app.services.risk_service import RiskService, ZERO_ACCOUNT_ID
@@ -21,6 +23,9 @@ from app.strategies.context import StrategyContext
 from app.strategies.registry import get_strategy_class, import_samples, list_strategies
 
 logger = logging.getLogger(__name__)
+
+# 策略连续异常达到该阈值后自动停止（可通过 system_configs.strategy_error_limit 覆盖）
+DEFAULT_STRATEGY_ERROR_LIMIT = 5
 
 
 @dataclass
@@ -81,6 +86,7 @@ class _RunningStrategy:
     symbols: set[str]
     interval: str
     bar_builders: dict[str, _BarBuilder] = field(default_factory=dict)
+    consecutive_errors: int = 0
 
 
 class _MarketDataReader:
@@ -202,7 +208,7 @@ class StrategyService:
         self.ensure_definitions(db)
         row = StrategyRepository(db).get_by_strategy_id(strategy_id)
         if row is None:
-            raise BizError("STRATEGY_NOT_FOUND", f"策略不存在: {strategy_id}")
+            raise BizError(ErrorCode.STRATEGY_NOT_FOUND, f"策略不存在: {strategy_id}")
         cls = get_strategy_class(strategy_id)
         return {
             "strategy_id": row.strategy_id,
@@ -222,7 +228,7 @@ class StrategyService:
         validated = cls.param_schema(**parameters).model_dump(mode="json")
         row = repo.update_parameters(strategy_id, validated)
         if row is None:
-            raise BizError("STRATEGY_NOT_FOUND", f"策略不存在: {strategy_id}")
+            raise BizError(ErrorCode.STRATEGY_NOT_FOUND, f"策略不存在: {strategy_id}")
         AuditService(db, correlation_id=correlation_id).log(
             action="strategy_parameters_update",
             module="strategy",
@@ -241,19 +247,20 @@ class StrategyService:
         symbols: list[str] | None = None,
         parameters: dict | None = None,
         confirm: bool = False,
+        reason: str = "",
         correlation_id: str = "",
     ) -> dict:
         if not confirm:
-            raise BizError("STRATEGY_CONFIRM_REQUIRED", "启动策略需要 confirm=true")
+            raise BizError(ErrorCode.STRATEGY_CONFIRM_REQUIRED, "启动策略需要 confirm=true")
 
         self._ensure_samples()
         if strategy_id in self._running:
-            raise BizError("STRATEGY_ALREADY_RUNNING", "策略已在运行")
+            raise BizError(ErrorCode.STRATEGY_ALREADY_RUNNING, "策略已在运行")
 
         svc = self._get_db_services(db, correlation_id)
         row = svc["strategy_repo"].get_by_strategy_id(strategy_id)
         if row is None or not row.enabled:
-            raise BizError("STRATEGY_NOT_FOUND", f"策略不存在或未启用: {strategy_id}")
+            raise BizError(ErrorCode.STRATEGY_NOT_FOUND, f"策略不存在或未启用: {strategy_id}")
 
         cls = get_strategy_class(strategy_id)
         params = dict(row.parameters)
@@ -268,7 +275,7 @@ class StrategyService:
             svc["system"].transition(SystemStatus.TRADING, reason=f"启动策略 {strategy_id}")
         elif system_status != SystemStatus.TRADING.value:
             raise BizError(
-                "RISK_SYSTEM_STOPPED",
+                ErrorCode.RISK_SYSTEM_STOPPED,
                 f"系统状态 {system_status} 不允许启动策略",
             )
 
@@ -317,9 +324,15 @@ class StrategyService:
             object_type="strategy_run",
             object_id=str(run.id),
             result="success",
+            reason=reason or f"启动策略 {strategy_id}",
             request_summary={"strategy_id": strategy_id, "parameters": validated},
         )
-        return {"run_id": str(run.id), "status": "running", "strategy_id": strategy_id}
+        return {
+            "run_id": str(run.id),
+            "status": "running",
+            "strategy_id": strategy_id,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+        }
 
     def stop(
         self,
@@ -331,11 +344,13 @@ class StrategyService:
     ) -> dict:
         running = self._running.pop(strategy_id, None)
         if running is None:
-            raise BizError("STRATEGY_NOT_RUNNING", "策略未运行")
+            raise BizError(ErrorCode.STRATEGY_NOT_RUNNING, "策略未运行")
 
         running.instance.on_stop()
         svc = self._get_db_services(db, correlation_id)
-        svc["run_repo"].finish_run(running.run_id, status=StrategyRunStatus.STOPPED, reason=reason)
+        finished = svc["run_repo"].finish_run(
+            running.run_id, status=StrategyRunStatus.STOPPED, reason=reason
+        )
         svc["audit"].log(
             action="strategy_stop",
             module="strategy",
@@ -344,20 +359,33 @@ class StrategyService:
             result="success",
             reason=reason,
         )
-        return {"status": "stopped", "strategy_id": strategy_id}
+        return {
+            "run_id": str(running.run_id),
+            "status": "stopped",
+            "strategy_id": strategy_id,
+            "stopped_at": finished.stopped_at.isoformat()
+            if finished and finished.stopped_at
+            else None,
+        }
+
+    def running_count(self) -> int:
+        return len(self._running)
 
     def dispatch_quote(self, quote: QuoteSnapshot) -> None:
         if not self._running:
             return
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             for strategy_id, running in list(self._running.items()):
                 try:
                     running.instance.on_quote(quote)
+                    running.consecutive_errors = 0
                 except Exception as exc:
-                    logger.exception("策略 %s on_quote 异常", strategy_id)
-                    running.context.log("error", f"on_quote 异常: {exc}")
+                    self._on_strategy_error(db, strategy_id, exc)
 
+                running = self._running.get(strategy_id)
+                if running is None:
+                    continue
                 if quote.symbol not in running.symbols:
                     continue
                 builder = running.bar_builders.get(quote.symbol)
@@ -367,15 +395,105 @@ class StrategyService:
                 if finished is not None:
                     try:
                         running.instance.on_bar(finished)
+                        running.consecutive_errors = 0
                     except Exception as exc:
-                        logger.exception("策略 %s on_bar 异常", strategy_id)
-                        running.context.log("error", f"on_bar 异常: {exc}")
+                        self._on_strategy_error(db, strategy_id, exc)
             db.commit()
         except Exception:
             logger.exception("dispatch_quote 失败")
             db.rollback()
         finally:
             db.close()
+
+    def dispatch_bar(self, bar: KlineBar) -> None:
+        """直接向运行中策略推送 K 线（供测试与外部喂数）。"""
+        if not self._running:
+            return
+        db = db_session.SessionLocal()
+        try:
+            for strategy_id, running in list(self._running.items()):
+                if bar.symbol not in running.symbols:
+                    continue
+                try:
+                    running.instance.on_bar(bar)
+                    running.consecutive_errors = 0
+                except Exception as exc:
+                    self._on_strategy_error(db, strategy_id, exc)
+            db.commit()
+        except Exception:
+            logger.exception("dispatch_bar 失败")
+            db.rollback()
+        finally:
+            db.close()
+
+    def _get_strategy_error_limit(self, db: Session) -> int:
+        try:
+            from app.repositories.system_config_repo import SystemConfigRepository
+
+            raw = SystemConfigRepository(db).get_value("strategy_error_limit", "")
+            if raw.strip():
+                return max(int(raw), 1)
+        except Exception:
+            logger.debug("读取 strategy_error_limit 失败，使用默认值", exc_info=True)
+        return DEFAULT_STRATEGY_ERROR_LIMIT
+
+    def _on_strategy_error(self, db: Session, strategy_id: str, exc: Exception) -> None:
+        """策略异常：写 system_events，计数，连续异常达阈值自动停止。"""
+        logger.exception("策略 %s 异常", strategy_id)
+        running = self._running.get(strategy_id)
+        if running is None:
+            return
+
+        running.consecutive_errors += 1
+        running.context.log("error", f"策略异常: {exc}")
+
+        SystemEventRepository(db).add(
+            module="strategy",
+            event_code="STRATEGY_ERROR",
+            message=f"策略 {strategy_id} 异常: {exc}",
+            severity=Severity.ERROR,
+            payload={
+                "strategy_id": strategy_id,
+                "run_id": str(running.run_id),
+                "consecutive_errors": running.consecutive_errors,
+                "error": str(exc),
+            },
+        )
+
+        limit = self._get_strategy_error_limit(db)
+        if running.consecutive_errors < limit:
+            return
+
+        reason = f"连续异常自动停止（{running.consecutive_errors}/{limit}）"
+        popped = self._running.pop(strategy_id, None)
+        if popped is None:
+            return
+        try:
+            popped.instance.on_stop()
+        except Exception:
+            logger.exception("策略 %s on_stop 异常（自动停止过程）", strategy_id)
+
+        svc = self._get_db_services(db)
+        svc["run_repo"].finish_run(
+            popped.run_id,
+            status=StrategyRunStatus.FAILED,
+            reason=reason,
+        )
+        svc["audit"].log(
+            action="strategy_auto_stop",
+            module="strategy",
+            object_type="strategy",
+            object_id=strategy_id,
+            result="success",
+            reason=reason,
+        )
+        SystemEventRepository(db).add(
+            module="strategy",
+            event_code="STRATEGY_AUTO_STOPPED",
+            message=reason,
+            severity=Severity.WARNING,
+            payload={"strategy_id": strategy_id, "run_id": str(popped.run_id)},
+        )
 
     def _on_signal(
         self,
@@ -397,7 +515,7 @@ class StrategyService:
     ) -> None:
         from app.schemas.enums import Market as MarketEnum, OrderSide, PriceType, SignalAction
 
-        db = SessionLocal()
+        db = db_session.SessionLocal()
         try:
             if isinstance(market, str):
                 market = MarketEnum(market)
@@ -471,13 +589,17 @@ class StrategyService:
                 metadata={"strategy_id": strategy_id, "run_id": str(run_id)},
             )
             risk = RiskService(db, correlation_id=correlation_id)
-            passed, results = risk.check(request, signal_id=sig.signal_id, exclude_signal_id=sig.signal_id)
+            passed, results, check_id = risk.check(
+                request, signal_id=sig.signal_id, exclude_signal_id=sig.signal_id
+            )
             db.commit()
             if passed:
                 from app.services.order_service import order_service
 
-                order_service.create_from_signal(db, sig, request, correlation_id=correlation_id)
-                logger.info("信号 %s 风控通过，已创建订单", sig.signal_id)
+                order_service.create_from_signal(
+                    db, sig, request, check_id=check_id, correlation_id=correlation_id
+                )
+                logger.info("信号 %s 风控通过，已创建订单 check_id=%s", sig.signal_id, check_id)
             else:
                 hit = next((r for r in results if r.result == "rejected"), None)
                 logger.info(

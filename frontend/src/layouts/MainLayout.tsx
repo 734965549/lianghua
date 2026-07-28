@@ -9,9 +9,12 @@ import {
   WalletOutlined,
   HistoryOutlined,
   AlertOutlined,
+  DatabaseOutlined,
   FundOutlined,
+  UnorderedListOutlined,
 } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import EmergencyStopButton from "../components/EmergencyStopButton";
 import SystemStatusBar from "../components/SystemStatusBar";
 
 const { Header, Sider, Content } = Layout;
@@ -19,6 +22,8 @@ const { Header, Sider, Content } = Layout;
 const menuItems = [
   { key: "/dashboard", icon: <DashboardOutlined />, label: "仪表盘" },
   { key: "/market", icon: <LineChartOutlined />, label: "行情看板" },
+  { key: "/watchlist", icon: <UnorderedListOutlined />, label: "股票池" },
+  { key: "/data", icon: <DatabaseOutlined />, label: "数据管理" },
   { key: "/strategies", icon: <RobotOutlined />, label: "策略监控" },
   { key: "/trading", icon: <SwapOutlined />, label: "自动交易" },
   { key: "/positions", icon: <WalletOutlined />, label: "持仓与账户" },
@@ -56,10 +61,13 @@ export default function MainLayout() {
             padding: "0 24px",
             display: "flex",
             alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
             borderBottom: "1px solid #f0f0f0",
           }}
         >
           <SystemStatusBar />
+          <EmergencyStopButton size="small" />
         </Header>
         <Content style={{ margin: 24 }}>
           <Outlet />

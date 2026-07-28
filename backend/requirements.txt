@@ -17,6 +17,10 @@ python-dotenv==1.*
 orjson==3.*
 cryptography==43.*
 
+# 行情数据
+akshare>=1.12.0
+pandas>=2.0.0
+
 # AI（可选，阶段7）
 httpx==0.27.*
 openai==1.*

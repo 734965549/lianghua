@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_correlation_id, get_db
 from app.api.response import BizError, ok
 from app.schemas.enums import Market, OrderStatus
+from app.schemas.error_codes import ErrorCode
 from app.services.history_service import HistoryService
 
 router = APIRouter(tags=["history"])
@@ -129,5 +130,5 @@ def history_order_chain(
 ):
     chain = HistoryService(db).order_chain(client_order_id)
     if chain is None:
-        raise BizError("ORDER_NOT_FOUND", f"订单不存在: {client_order_id}", status=404)
+        raise BizError(ErrorCode.ORDER_NOT_FOUND, f"订单不存在: {client_order_id}", status=404)
     return ok(chain, correlation_id=correlation_id)

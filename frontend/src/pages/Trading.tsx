@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Alert, Card, Typography } from "antd";
+import { Alert, Card, Space, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
+import EmergencyStopButton from "../components/EmergencyStopButton";
 import OrderTable from "../components/OrderTable";
 import TradeTable from "../components/TradeTable";
 import RiskCheckDrawer, { type RiskCheckItem } from "../components/RiskCheckDrawer";
@@ -47,12 +48,17 @@ export default function Trading() {
 
   return (
     <div>
-      <Typography.Title level={3} style={{ marginTop: 0 }}>
-        自动交易
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        策略信号经风控通过后自动下单；支持 WebSocket 增量刷新与撤单。
-      </Typography.Paragraph>
+      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }} align="start">
+        <div>
+          <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 0 }}>
+            自动交易
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
+            策略信号经风控通过后自动下单；支持 WebSocket 增量刷新与撤单。
+          </Typography.Paragraph>
+        </div>
+        <EmergencyStopButton />
+      </Space>
 
       {(riskStatus.data?.unknown_order_count ?? 0) > 0 ? (
         <Alert

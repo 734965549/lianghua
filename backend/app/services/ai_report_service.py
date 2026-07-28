@@ -1,8 +1,5 @@
-"""AI 复盘报告：先规则化模板，可选接 OpenAI 兼容接口。"""
-
-from __future__ import annotations
-
 import logging
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -35,15 +32,20 @@ FORBIDDEN_PATTERNS = [
     "立刻卖出",
 ]
 
+# 可选否定/建议前缀一并替换，避免「不要立即买入」→「不要建议关注」
+_SANITIZE_PREFIX = r"(?:不要|别|禁止|切勿|请勿|建议)?"
+_SANITIZE_REPLACEMENT = "建议关注"
+
 
 def sanitize_ai_content(content: str) -> tuple[str, list[str]]:
     """扫描并替换指令性词汇，返回 (正文, 命中列表)。"""
     hits: list[str] = []
     out = content
-    for pat in FORBIDDEN_PATTERNS:
-        if pat in out:
+    for pat in sorted(FORBIDDEN_PATTERNS, key=len, reverse=True):
+        pattern = re.compile(_SANITIZE_PREFIX + re.escape(pat))
+        if pattern.search(out):
             hits.append(pat)
-            out = out.replace(pat, "建议关注")
+            out = pattern.sub(_SANITIZE_REPLACEMENT, out)
     return out, hits
 
 
@@ -83,17 +85,24 @@ class AiReportService:
         loss_attribution = self._loss_attribution(trades)
         abnormal_patterns = self._detect_abnormal(metrics)
 
-        if self.ai_client and metrics.get("has_data"):
-            content = self._call_ai(metrics, loss_attribution, abnormal_patterns)
-        else:
-            content = self._rule_based_template(metrics, loss_attribution, abnormal_patterns)
-
         scope = {
             "strategy_ids": strategy_ids or [],
             "markets": markets or [],
             "symbols": symbols or [],
         }
         now = datetime.now(timezone.utc)
+        template_ctx = {
+            "generated_at": now.isoformat(),
+            "scope": scope,
+        }
+
+        if self.ai_client and metrics.get("has_data"):
+            content = self._call_ai(metrics, loss_attribution, abnormal_patterns, template_ctx)
+        else:
+            content = self._rule_based_template(
+                metrics, loss_attribution, abnormal_patterns, template_ctx
+            )
+
         report = self.repo.add_report(
             range_start=range_start,
             range_end=range_end,
@@ -142,7 +151,7 @@ class AiReportService:
             return None
         return self._detail(row)
 
-    def _call_ai(self, metrics, loss_attribution, abnormal) -> str:
+    def _call_ai(self, metrics, loss_attribution, abnormal, template_ctx: dict | None = None) -> str:
         user_prompt = self._build_user_prompt(metrics, loss_attribution, abnormal)
         try:
             resp = self.ai_client.chat.completions.create(
@@ -163,7 +172,7 @@ class AiReportService:
                 result="warning",
                 reason=str(exc),
             )
-            return self._rule_based_template(metrics, loss_attribution, abnormal)
+            return self._rule_based_template(metrics, loss_attribution, abnormal, template_ctx)
 
         content, hits = sanitize_ai_content(content)
         for pat in hits:
@@ -177,18 +186,47 @@ class AiReportService:
             )
         return content
 
-    def _rule_based_template(self, metrics, loss_attribution, abnormal) -> str:
+    def _rule_based_template(
+        self, metrics, loss_attribution, abnormal, template_ctx: dict | None = None
+    ) -> str:
+        ctx = template_ctx or {}
+        scope = ctx.get("scope") or {}
+        generated_at = ctx.get("generated_at") or datetime.now(timezone.utc).isoformat()
+        filter_bits = []
+        if scope.get("strategy_ids"):
+            filter_bits.append(f"策略={','.join(scope['strategy_ids'])}")
+        if scope.get("markets"):
+            filter_bits.append(f"市场={','.join(scope['markets'])}")
+        if scope.get("symbols"):
+            filter_bits.append(f"标的={','.join(scope['symbols'])}")
+        filter_text = "；".join(filter_bits) if filter_bits else "全部（无额外过滤）"
+
         if not metrics.get("has_data"):
             return (
-                "# 复盘报告\n\n所选范围内无交易数据，无法生成分析。\n\n"
+                "# 复盘报告\n\n"
+                f"- 生成时间：{generated_at}\n"
+                f"- 过滤条件：{filter_text}\n"
+                f"- 数据区间：{metrics.get('range_start', '')} 至 {metrics.get('range_end', '')}\n\n"
+                "所选范围内无交易数据，无法生成分析。\n\n"
                 "> 本报告由规则模板生成，仅供复盘参考，不构成投资建议，不提供直接下单入口。\n"
             )
         loss_lines = "\n".join(f"- {x}" for x in loss_attribution) or "- 暂无明显亏损归因"
         abnormal_lines = "\n".join(f"- {x}" for x in abnormal) or "- 未检测到异常模式"
+        ranking = metrics.get("strategy_ranking") or []
+        if ranking:
+            rank_lines = "\n".join(
+                f"- {i+1}. {r.get('strategy_id')}: 盈亏 {r.get('total_pnl')}，"
+                f"笔数 {r.get('trade_count')}，胜率 {r.get('win_rate')}"
+                for i, r in enumerate(ranking)
+            )
+        else:
+            rank_lines = "- 暂无策略维度数据"
         return f"""# 量化交易复盘报告
 
 ## 数据范围
-{metrics.get('range_start', '')} 至 {metrics.get('range_end', '')}
+- 生成时间：{generated_at}
+- 过滤条件：{filter_text}
+- 数据区间：{metrics.get('range_start', '')} 至 {metrics.get('range_end', '')}
 
 ## 总体表现
 - 总盈亏：{metrics.get('total_pnl')}
@@ -196,9 +234,13 @@ class AiReportService:
 - 盈亏比：{metrics.get('profit_loss_ratio')}
 - 最大回撤：{metrics.get('max_drawdown')}
 - 交易次数：{metrics.get('trade_count')}
+- 交易频率（日均笔数）：{metrics.get('trade_frequency')}
 - 已实现回合：{metrics.get('round_trips')}
 - 手续费：{metrics.get('fee_total')}
 - 平均持仓分钟：{metrics.get('avg_holding_minutes')}
+
+## 策略表现排名
+{rank_lines}
 
 ## 风险事件
 - 风控拒绝次数：{metrics.get('risk_reject_count')}

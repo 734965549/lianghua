@@ -2,8 +2,6 @@ import { useMemo, useState } from "react";
 import {
   Button,
   DatePicker,
-  Descriptions,
-  Drawer,
   Form,
   Input,
   Select,
@@ -17,50 +15,14 @@ import { useQuery } from "@tanstack/react-query";
 import { type Dayjs } from "dayjs";
 import { api } from "../api/client";
 import type { Paged } from "../api/types";
+import TradeChainDrawer, {
+  type TradeChainData,
+  type TradeChainOrder,
+  type TradeChainTrade,
+} from "../components/TradeChainDrawer";
 
-type OrderRow = {
-  client_order_id: string;
-  sdk_order_id?: string | null;
-  symbol: string;
-  market: string;
-  side: string;
-  action: string;
-  price: string;
-  quantity: string;
-  filled_quantity: string;
-  status: string;
-  strategy_id?: string | null;
-  created_at: string;
-  last_event_at?: string | null;
-};
-
-type TradeRow = {
-  sdk_trade_id: string;
-  client_order_id: string;
-  symbol: string;
-  market: string;
-  side: string;
-  price: string;
-  quantity: string;
-  fee: string;
-  trade_time: string;
-  strategy_id?: string | null;
-};
-
-type ChainData = {
-  order: OrderRow;
-  signal: Record<string, unknown> | null;
-  risk_checks: Array<{ id: string; result: string; rule_code: string; reason: string; checked_at: string }>;
-  trades: TradeRow[];
-  audit_logs: Array<{
-    id: number;
-    event_time: string;
-    action: string;
-    module: string;
-    result: string;
-    reason: string;
-  }>;
-};
+type OrderRow = TradeChainOrder;
+type TradeRow = TradeChainTrade;
 
 type FilterState = {
   range: [Dayjs, Dayjs] | null;
@@ -121,7 +83,7 @@ export default function History() {
 
   const chain = useQuery({
     queryKey: ["history-chain", chainId],
-    queryFn: () => api.get<ChainData>(`/history/orders/${encodeURIComponent(chainId!)}/chain`),
+    queryFn: () => api.get<TradeChainData>(`/history/orders/${encodeURIComponent(chainId!)}/chain`),
     enabled: !!chainId,
   });
 
@@ -295,90 +257,13 @@ export default function History() {
         ]}
       />
 
-      <Drawer
-        title={`交易链路 ${chainId ?? ""}`}
-        width={640}
+      <TradeChainDrawer
         open={!!chainId}
+        chainId={chainId}
+        data={chain.data}
+        loading={chain.isLoading}
         onClose={() => setChainId(null)}
-      >
-        {chain.isLoading ? (
-          <Typography.Text>加载中…</Typography.Text>
-        ) : chain.data ? (
-          <Space direction="vertical" style={{ width: "100%" }} size="large">
-            <div>
-              <Typography.Title level={5}>信号</Typography.Title>
-              {chain.data.signal ? (
-                <Descriptions size="small" column={1} bordered>
-                  {Object.entries(chain.data.signal).map(([k, v]) => (
-                    <Descriptions.Item key={k} label={k}>
-                      {String(v ?? "")}
-                    </Descriptions.Item>
-                  ))}
-                </Descriptions>
-              ) : (
-                <Typography.Text type="secondary">无关联信号</Typography.Text>
-              )}
-            </div>
-            <div>
-              <Typography.Title level={5}>风控</Typography.Title>
-              <Table
-                size="small"
-                pagination={false}
-                rowKey="id"
-                dataSource={chain.data.risk_checks}
-                columns={[
-                  { title: "时间", dataIndex: "checked_at" },
-                  { title: "结果", dataIndex: "result", width: 90 },
-                  { title: "规则", dataIndex: "rule_code", width: 140 },
-                  { title: "原因", dataIndex: "reason" },
-                ]}
-              />
-            </div>
-            <div>
-              <Typography.Title level={5}>委托</Typography.Title>
-              <Descriptions size="small" column={1} bordered>
-                {Object.entries(chain.data.order).map(([k, v]) => (
-                  <Descriptions.Item key={k} label={k}>
-                    {String(v ?? "")}
-                  </Descriptions.Item>
-                ))}
-              </Descriptions>
-            </div>
-            <div>
-              <Typography.Title level={5}>成交</Typography.Title>
-              <Table
-                size="small"
-                pagination={false}
-                rowKey="sdk_trade_id"
-                dataSource={chain.data.trades}
-                columns={[
-                  { title: "时间", dataIndex: "trade_time" },
-                  { title: "价格", dataIndex: "price", width: 90 },
-                  { title: "数量", dataIndex: "quantity", width: 90 },
-                  { title: "手续费", dataIndex: "fee", width: 90 },
-                ]}
-              />
-            </div>
-            <div>
-              <Typography.Title level={5}>审计</Typography.Title>
-              <Table
-                size="small"
-                pagination={false}
-                rowKey="id"
-                dataSource={chain.data.audit_logs}
-                columns={[
-                  { title: "时间", dataIndex: "event_time" },
-                  { title: "动作", dataIndex: "action", width: 120 },
-                  { title: "结果", dataIndex: "result", width: 90 },
-                  { title: "原因", dataIndex: "reason" },
-                ]}
-              />
-            </div>
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">无数据</Typography.Text>
-        )}
-      </Drawer>
+      />
     </div>
   );
 }

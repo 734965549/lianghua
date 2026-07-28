@@ -435,6 +435,8 @@ class TradingAdapter(ABC):
 ## Mock 适配器骨架
 
 > 放 `backend/app/sdk/mock_adapter.py`。关键点：所有行为可配置、可注入异常、可控制延迟，用于测试风控熔断和前端实时更新。
+>
+> **实现说明（2026-07）：** 因适配器对外 API 为同步调用，行情推送与成交模拟采用 `threading.Thread` + `sleep`，与下方 asyncio 骨架**功能等价**；不强制改为 asyncio Task。
 
 ```python
 import asyncio

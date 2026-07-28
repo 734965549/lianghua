@@ -9,8 +9,12 @@ from app.sdk.models import (
     AdapterStatus,
     CancelOrderRequest,
     KlineBar,
+    OrderQuery,
+    OrderSnapshot,
     PlaceOrderRequest,
     QuoteSnapshot,
+    TradeQuery,
+    TradeSnapshot,
 )
 
 
@@ -74,3 +78,30 @@ def test_adapter_status_model():
     status = AdapterStatus(connected=True, account_no="MOCK001", latency_ms=50)
     assert status.connected is True
     assert status.error_code is None
+
+
+@pytest.mark.unit
+def test_order_trade_snapshot_query_models():
+    oq = OrderQuery(client_order_id="c1")
+    tq = TradeQuery(sdk_trade_id="t1")
+    snap = OrderSnapshot(
+        client_order_id="c1",
+        sdk_order_id="s1",
+        status=OrderStatus.SUBMITTED,
+        filled_quantity=Decimal("0"),
+        remaining_quantity=Decimal("100"),
+    )
+    trade = TradeSnapshot(
+        sdk_trade_id="t1",
+        client_order_id="c1",
+        symbol="600000.SH",
+        market=Market.STOCK,
+        side=OrderSide.BUY,
+        price=Decimal("10"),
+        quantity=Decimal("100"),
+        trade_time=datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc),
+    )
+    assert oq.client_order_id == "c1"
+    assert tq.sdk_trade_id == "t1"
+    assert snap.status == OrderStatus.SUBMITTED
+    assert trade.quantity == Decimal("100")

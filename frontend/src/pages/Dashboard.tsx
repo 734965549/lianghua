@@ -1,30 +1,24 @@
-import { Col, Row, Table, Typography } from "antd";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
-import type { DashboardData, HealthData } from "../api/types";
+import { Col, Row, Space, Table, Typography } from "antd";
+import { useDashboard, useHealth } from "../api/hooks";
+import EmergencyStopButton from "../components/EmergencyStopButton";
 import MetricCard from "../components/MetricCard";
 import { SYSTEM_STATUS_LABEL, connColor } from "../utils/status";
 
 export default function Dashboard() {
-  const health = useQuery({
-    queryKey: ["health"],
-    queryFn: () => api.get<HealthData>("/health"),
-    refetchInterval: 10000,
-  });
-  const dash = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => api.get<DashboardData>("/dashboard"),
-    refetchInterval: 10000,
-  });
+  const health = useHealth();
+  const dash = useDashboard();
 
   const h = health.data;
   const d = dash.data;
 
   return (
     <div>
-      <Typography.Title level={3} style={{ marginTop: 0 }}>
-        仪表盘
-      </Typography.Title>
+      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }} align="start">
+        <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 0 }}>
+          仪表盘
+        </Typography.Title>
+        <EmergencyStopButton />
+      </Space>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>

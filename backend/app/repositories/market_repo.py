@@ -133,3 +133,21 @@ class MarketRepository(BaseRepository[MarketSnapshot]):
         if end:
             q = q.filter(KlineBarModel.bar_time <= end)
         return q.order_by(desc(KlineBarModel.bar_time)).limit(limit).all()
+
+    def delete_klines(
+        self,
+        *,
+        market: Market,
+        symbol: str,
+        interval: str | None = None,
+    ) -> int:
+        q = self.db.query(KlineBarModel).filter(
+            KlineBarModel.market == market,
+            KlineBarModel.symbol == symbol,
+        )
+        if interval:
+            q = q.filter(KlineBarModel.interval == interval)
+        count = q.count()
+        q.delete(synchronize_session=False)
+        self.db.flush()
+        return count

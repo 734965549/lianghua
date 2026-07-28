@@ -21,6 +21,7 @@ from app.api.routes import (
     strategy_runs,
     system,
     trades,
+    watchlist,
     ws,
 )
 from app.core.config import settings
@@ -77,4 +78,6 @@ app.include_router(trades.router, prefix="/api")
 app.include_router(positions.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
 app.include_router(ai_reports.router, prefix="/api")
+app.include_router(watchlist.router, prefix="/api")
+app.include_router(watchlist.data_router, prefix="/api")
 app.include_router(ws.router, prefix="/api")

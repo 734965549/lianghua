@@ -18,7 +18,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider locale={zhCN}>
+      <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: "#1677ff" } }}>
         <AntdApp>
           <RouterProvider router={router} />
         </AntdApp>

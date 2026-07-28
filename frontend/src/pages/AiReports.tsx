@@ -9,17 +9,15 @@ import {
   Input,
   Row,
   Select,
-  Space,
-  Statistic,
   Table,
   Typography,
   message,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Dayjs } from "dayjs";
-import ReactECharts from "echarts-for-react";
 import { api } from "../api/client";
 import type { Paged } from "../api/types";
+import AiReportViewer, { type AiReportDetail } from "../components/AiReportViewer";
 
 type ReportSummary = {
   report_id: string;
@@ -34,13 +32,6 @@ type ReportSummary = {
     win_rate?: string;
   };
   metadata?: { feedback?: string };
-};
-
-type ReportDetail = ReportSummary & {
-  scope: { strategy_ids?: string[]; markets?: string[]; symbols?: string[] };
-  metrics: Record<string, unknown>;
-  content: string;
-  content_format: string;
 };
 
 export default function AiReports() {
@@ -58,7 +49,7 @@ export default function AiReports() {
 
   const detail = useQuery({
     queryKey: ["ai-report", selectedId],
-    queryFn: () => api.get<ReportDetail>(`/ai/reports/${selectedId}`),
+    queryFn: () => api.get<AiReportDetail>(`/ai/reports/${selectedId}`),
     enabled: !!selectedId,
   });
 
@@ -95,21 +86,6 @@ export default function AiReports() {
       void qc.invalidateQueries({ queryKey: ["ai-reports"] });
     },
   });
-
-  const metrics = (detail.data?.metrics ?? {}) as Record<string, string | number | boolean | undefined>;
-  const dailyPnl = (metrics.daily_pnl as Record<string, string> | undefined) ?? {};
-  const chartOption = {
-    tooltip: { trigger: "axis" },
-    xAxis: { type: "category", data: Object.keys(dailyPnl) },
-    yAxis: { type: "value" },
-    series: [
-      {
-        type: "bar",
-        data: Object.values(dailyPnl).map((v) => Number(v)),
-        name: "日盈亏",
-      },
-    ],
-  };
 
   return (
     <div>
@@ -203,81 +179,20 @@ export default function AiReports() {
           </Card>
         </Col>
         <Col span={14}>
-          <Card
-            size="small"
-            title="报告详情"
-            extra={
-              selectedId ? (
-                <Space>
-                  <Button size="small" onClick={() => feedback.mutate(true)}>
-                    标记有用
-                  </Button>
-                  <Button size="small" onClick={() => feedback.mutate(false)}>
-                    标记无用
-                  </Button>
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      if (detail.data?.content) {
-                        void navigator.clipboard.writeText(detail.data.content);
-                        message.success("已复制 Markdown");
-                      }
-                    }}
-                  >
-                    复制 Markdown
-                  </Button>
-                </Space>
-              ) : null
-            }
-          >
-            {!selectedId ? (
-              <Typography.Text type="secondary">请选择或生成一份报告</Typography.Text>
-            ) : detail.isLoading ? (
-              <Typography.Text>加载中…</Typography.Text>
-            ) : detail.data ? (
-              <Space direction="vertical" style={{ width: "100%" }} size="middle">
-                <Row gutter={12}>
-                  <Col span={6}>
-                    <Statistic title="总盈亏" value={String(metrics.total_pnl ?? "-")} />
-                  </Col>
-                  <Col span={6}>
-                    <Statistic title="胜率" value={String(metrics.win_rate ?? "-")} />
-                  </Col>
-                  <Col span={6}>
-                    <Statistic title="盈亏比" value={String(metrics.profit_loss_ratio ?? "-")} />
-                  </Col>
-                  <Col span={6}>
-                    <Statistic title="最大回撤" value={String(metrics.max_drawdown ?? "-")} />
-                  </Col>
-                </Row>
-                {Object.keys(dailyPnl).length > 0 ? (
-                  <ReactECharts style={{ height: 220 }} option={chartOption} />
-                ) : null}
-                <Typography.Paragraph>
-                  <pre
-                    style={{
-                      whiteSpace: "pre-wrap",
-                      background: "#fafafa",
-                      padding: 12,
-                      borderRadius: 6,
-                      maxHeight: 480,
-                      overflow: "auto",
-                      margin: 0,
-                    }}
-                  >
-                    {detail.data.content}
-                  </pre>
-                </Typography.Paragraph>
-                {detail.data.metadata?.feedback ? (
-                  <Typography.Text type="secondary">
-                    反馈：{detail.data.metadata.feedback}
-                  </Typography.Text>
-                ) : null}
-              </Space>
-            ) : (
-              <Typography.Text type="secondary">报告不存在</Typography.Text>
-            )}
-          </Card>
+          <AiReportViewer
+            selected={!!selectedId}
+            loading={detail.isLoading}
+            report={detail.data}
+            feedbackLoading={feedback.isPending}
+            onUseful={() => feedback.mutate(true)}
+            onUseless={() => feedback.mutate(false)}
+            onCopy={() => {
+              if (detail.data?.content) {
+                void navigator.clipboard.writeText(detail.data.content);
+                message.success("已复制 Markdown");
+              }
+            }}
+          />
         </Col>
       </Row>
     </div>

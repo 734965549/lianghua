@@ -1,10 +1,11 @@
 import { Button, Input, Modal, Select, Space, Table, Tag, message } from "antd";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { api } from "../api/client";
-import type { Paged } from "../api/types";
-import { ws } from "../api/ws";
+import { useOrders } from "../api/hooks";
+import { useWebSocket } from "../hooks/useWebSocket";
 import { ORDER_STATUS_LABEL, orderStatusColor } from "../utils/orderStatus";
+import ConfirmDialog from "./ConfirmDialog";
 
 export type OrderRow = {
   client_order_id: string;
@@ -32,22 +33,16 @@ export default function OrderTable({ onOpenRisk }: Props) {
   const [confirmTarget, setConfirmTarget] = useState<OrderRow | null>(null);
   const [resolvedStatus, setResolvedStatus] = useState("cancelled");
   const [confirmReason, setConfirmReason] = useState("");
-  const { data, isLoading } = useQuery({
-    queryKey: ["orders"],
-    queryFn: () => api.get<Paged<OrderRow>>("/orders?page=1&page_size=50"),
-    refetchInterval: 8000,
+  const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
+  const { data, isLoading } = useOrders<OrderRow>(1, 50);
+
+  useWebSocket("order.update", () => {
+    qc.invalidateQueries({ queryKey: ["orders"] });
   });
 
-  useEffect(() => {
-    const off = ws.on("order.update", () => {
-      qc.invalidateQueries({ queryKey: ["orders"] });
-    });
-    return off;
-  }, [qc]);
-
   const cancel = useMutation({
-    mutationFn: (id: string) =>
-      api.post(`/orders/${encodeURIComponent(id)}/cancel`, { reason: "用户手动撤单" }),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post(`/orders/${encodeURIComponent(id)}/cancel`, { reason }),
     onSuccess: () => {
       message.success("撤单请求已提交");
       qc.invalidateQueries({ queryKey: ["orders"] });
@@ -118,17 +113,7 @@ export default function OrderTable({ onOpenRisk }: Props) {
                 </Button>
               )}
               {cancellable.has(row.status) && (
-                <Button
-                  size="small"
-                  danger
-                  onClick={() =>
-                    Modal.confirm({
-                      title: "确认撤单？",
-                      content: "将撤销该笔未成交委托。",
-                      onOk: () => cancel.mutateAsync(row.client_order_id),
-                    })
-                  }
-                >
+                <Button size="small" danger onClick={() => setCancelTarget(row)}>
                   撤单
                 </Button>
               )}
@@ -177,6 +162,32 @@ export default function OrderTable({ onOpenRisk }: Props) {
         onChange={(e) => setConfirmReason(e.target.value)}
       />
     </Modal>
+    <ConfirmDialog
+      open={!!cancelTarget}
+      title="确认撤单？"
+      impact={
+        cancelTarget ? (
+          <span>
+            将撤销该笔未成交委托：
+            <strong>
+              {cancelTarget.symbol} {cancelTarget.side} {cancelTarget.quantity} @ {cancelTarget.price}
+            </strong>
+            （{cancelTarget.client_order_id}）
+          </span>
+        ) : (
+          "将撤销该笔未成交委托。"
+        )
+      }
+      okText="确认撤单"
+      danger
+      confirmLoading={cancel.isPending}
+      onCancel={() => setCancelTarget(null)}
+      onConfirm={async (reason) => {
+        if (!cancelTarget) return;
+        await cancel.mutateAsync({ id: cancelTarget.client_order_id, reason });
+        setCancelTarget(null);
+      }}
+    />
     </>
   );
 }

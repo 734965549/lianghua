@@ -28,6 +28,9 @@ backups/
 .idea/
 *.swp
 
+# 本地知识图谱 / 索引缓存（勿提交）
+.codebase-memory/
+
 # OS
 Thumbs.db
 .DS_Store

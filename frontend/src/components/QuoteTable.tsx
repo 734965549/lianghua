@@ -4,11 +4,18 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { api } from "../api/client";
 import type { QuoteSnapshot } from "../api/types";
-import { ws } from "../api/ws";
+import { useWebSocket } from "../hooks/useWebSocket";
+import {
+  formatChangeColor,
+  formatDecimal,
+  formatPercent,
+  formatTime,
+} from "../utils/format";
 
 const STALE_MS = 10_000;
 
 type Props = {
+  watchlist?: { market: string; symbol: string }[];
   selected?: QuoteSnapshot | null;
   onSelect?: (quote: QuoteSnapshot) => void;
 };
@@ -17,13 +24,27 @@ function isStale(quoteTime: string): boolean {
   return Date.now() - dayjs(quoteTime).valueOf() > STALE_MS;
 }
 
-export default function QuoteTable({ selected, onSelect }: Props) {
+export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
   const [quotes, setQuotes] = useState<QuoteSnapshot[]>([]);
   const [tick, setTick] = useState(0);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["quotes"],
-    queryFn: () => api.get<QuoteSnapshot[]>("/quotes"),
+    queryKey: ["quotes", watchlist?.map((w) => `${w.market}:${w.symbol}`).join(",")],
+    queryFn: async () => {
+      if (watchlist?.length) {
+        const results: QuoteSnapshot[] = [];
+        for (const w of watchlist) {
+          try {
+            const q = await api.get<QuoteSnapshot>(`/quotes/${w.market}/${w.symbol}`);
+            results.push(q);
+          } catch {
+            /* 暂无行情 */
+          }
+        }
+        return results;
+      }
+      return api.get<QuoteSnapshot[]>("/quotes");
+    },
     refetchInterval: 15000,
   });
 
@@ -31,22 +52,20 @@ export default function QuoteTable({ selected, onSelect }: Props) {
     if (data) setQuotes(data);
   }, [data]);
 
-  useEffect(() => {
-    const off = ws.on("quote.update", (raw) => {
-      const q = raw as QuoteSnapshot;
-      setQuotes((prev) => {
-        const idx = prev.findIndex((x) => x.symbol === q.symbol && x.market === q.market);
-        if (idx < 0) return [...prev, q];
-        const next = [...prev];
-        next[idx] = { ...next[idx], ...q };
-        return next;
-      });
+  useWebSocket("quote.update", (raw) => {
+    const q = raw as QuoteSnapshot;
+    setQuotes((prev) => {
+      const idx = prev.findIndex((x) => x.symbol === q.symbol && x.market === q.market);
+      if (idx < 0) return [...prev, q];
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...q };
+      return next;
     });
+  });
+
+  useEffect(() => {
     const timer = window.setInterval(() => setTick((t) => t + 1), 2000);
-    return () => {
-      off();
-      clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, []);
 
   const rows = useMemo(
@@ -106,29 +125,27 @@ export default function QuoteTable({ selected, onSelect }: Props) {
             title: "最新价",
             dataIndex: "last_price",
             align: "right",
-            render: (v: string) => Number(v).toFixed(2),
+            render: (v: string) => formatDecimal(v, 2),
           },
           {
             title: "涨跌幅",
             dataIndex: "change_rate",
             align: "right",
-            render: (v: string) => {
-              const n = Number(v);
-              const color = n > 0 ? "#cf1322" : n < 0 ? "#3f8600" : undefined;
-              return <span style={{ color }}>{(n * 100).toFixed(2)}%</span>;
-            },
+            render: (v: string) => (
+              <span style={{ color: formatChangeColor(v) }}>{formatPercent(v)}</span>
+            ),
           },
           {
             title: "成交量",
             dataIndex: "volume",
             align: "right",
-            render: (v: string) => Number(v).toFixed(0),
+            render: (v: string) => formatDecimal(v, 0),
           },
           {
             title: "更新时间",
             dataIndex: "quote_time",
             width: 170,
-            render: (v: string) => dayjs(v).format("HH:mm:ss"),
+            render: (v: string) => formatTime(v),
           },
         ]}
       />

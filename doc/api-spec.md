@@ -242,6 +242,8 @@ MVP 不建议开放手动新建实盘委托接口。若后续增加，必须与�
 
 ## 错误码
 
+> 代码常量：`backend/app/schemas/error_codes.py`（`ErrorCode`）。新增错误码时先加常量再引用。
+
 | 错误码 | 说明 |
 | --- | --- |
 | `SYS_DATABASE_UNAVAILABLE` | 数据库不可用 |
@@ -576,13 +578,13 @@ async def biz_error_handler(request, exc: BizError):
 
 `PUT /api/risk/settings`
 
-- 请求体：`risk_configs` 子集（只传要改的字段）
+- 请求体：`risk_configs` 子集（只传要改的字段）+ 必须 `confirm=true`
   ```json
-  {"daily_loss_limit": "30000", "max_order_amount": "500000"}
+  {"confirm": true, "daily_loss_limit": "30000", "max_order_amount": "500000", "reason": "调整日亏损阈值"}
   ```
 - 响应：更新后的完整 `risk_configs`
-- 错误码：`RISK_CONFIG_INVALID`
-- 必须：写审计日志，前端二次确认
+- 错误码：`RISK_CONFIG_INVALID`、`RISK_CONFIRM_REQUIRED`
+- 必须：写审计日志，后端与前端二次确认
 
 ### 19. 一键停止
 

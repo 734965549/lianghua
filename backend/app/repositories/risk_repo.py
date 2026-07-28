@@ -137,3 +137,18 @@ class RiskRepository(BaseRepository[RiskConfig]):
             .order_by(RiskCheck.checked_at.asc())
             .all()
         )
+
+    def get_check(self, check_id: UUID) -> RiskCheck | None:
+        return self.db.get(RiskCheck, check_id)
+
+    def get_passed_by_client_order_id(self, client_order_id: str) -> RiskCheck | None:
+        """取该 client_order_id 最新一条 result=passed 的风控记录。"""
+        return (
+            self.db.query(RiskCheck)
+            .filter(
+                RiskCheck.client_order_id == client_order_id,
+                RiskCheck.result == RiskResult.PASSED,
+            )
+            .order_by(desc(RiskCheck.checked_at))
+            .first()
+        )

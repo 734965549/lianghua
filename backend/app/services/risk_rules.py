@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.sdk.models import PlaceOrderRequest
+from app.schemas.error_codes import ErrorCode
 from app.services.time_utils import is_in_session
 
 
@@ -89,7 +90,7 @@ class OrderAmountRule(RiskRule):
             return RuleResult(self.rule_code, "passed")
         amount = price * ctx.request.quantity
         limit = Decimal(str(ctx.risk_config.get("max_order_amount", 0)))
-        if amount > limit:
+        if limit > 0 and amount > limit:
             return RuleResult(
                 self.rule_code,
                 "rejected",
@@ -103,7 +104,7 @@ class OrderQuantityRule(RiskRule):
 
     def check(self, ctx: RiskContext) -> RuleResult:
         limit = Decimal(str(ctx.risk_config.get("max_order_quantity", 0)))
-        if ctx.request.quantity > limit:
+        if limit > 0 and ctx.request.quantity > limit:
             return RuleResult(
                 self.rule_code,
                 "rejected",
@@ -124,7 +125,7 @@ class SymbolPositionRule(RiskRule):
         )
         side = ctx.request.side.value if hasattr(ctx.request.side, "value") else ctx.request.side
         new_qty = pos_qty + ctx.request.quantity if side == "buy" else pos_qty
-        if new_qty > limit:
+        if limit > 0 and new_qty > limit:
             return RuleResult(
                 self.rule_code,
                 "rejected",
@@ -139,10 +140,18 @@ class TotalPositionRule(RiskRule):
     def check(self, ctx: RiskContext) -> RuleResult:
         limit = Decimal(str(ctx.risk_config.get("max_total_position", 0)))
         total = sum(
-            Decimal(str(p.get("quantity", 0))) * Decimal(str(p.get("market_value", 0)))
+            Decimal(str(p.get("market_value", 0)))
             for p in ctx.positions
         )
-        if total > limit:
+        side = ctx.request.side.value if hasattr(ctx.request.side, "value") else ctx.request.side
+        # 买入时计入本次新委托敞口，避免已接近上限时仍可通过
+        if side == "buy":
+            price = ctx.request.price or Decimal("0")
+            if price <= 0 and ctx.latest_price:
+                price = ctx.latest_price
+            if price > 0:
+                total += price * ctx.request.quantity
+        if limit > 0 and total > limit:
             return RuleResult(
                 self.rule_code,
                 "rejected",
@@ -152,11 +161,11 @@ class TotalPositionRule(RiskRule):
 
 
 class DailyLossRule(RiskRule):
-    rule_code = "RISK_DAILY_LOSS_LIMIT"
+    rule_code = ErrorCode.RISK_DAILY_LOSS_LIMIT
 
     def check(self, ctx: RiskContext) -> RuleResult:
         limit = Decimal(str(ctx.risk_config.get("daily_loss_limit", 0)))
-        if ctx.today_pnl < 0 and abs(ctx.today_pnl) >= limit:
+        if limit > 0 and ctx.today_pnl < 0 and abs(ctx.today_pnl) >= limit:
             return RuleResult(
                 self.rule_code,
                 "rejected",
@@ -170,7 +179,7 @@ class DailyTradeCountRule(RiskRule):
 
     def check(self, ctx: RiskContext) -> RuleResult:
         limit = int(ctx.risk_config.get("daily_trade_count_limit", 0))
-        if ctx.today_trade_count >= limit:
+        if limit > 0 and ctx.today_trade_count >= limit:
             return RuleResult(
                 self.rule_code,
                 "rejected",
@@ -187,11 +196,13 @@ class DuplicateSignalRule(RiskRule):
         cutoff = ctx.now.timestamp() - window
         strategy_id = ctx.request.metadata.get("strategy_id", "")
         side = ctx.request.side.value if hasattr(ctx.request.side, "value") else ctx.request.side
+        action = ctx.request.action.value if hasattr(ctx.request.action, "value") else ctx.request.action
         for signal in ctx.recent_signals:
             if (
                 signal.get("strategy_id") == strategy_id
                 and signal.get("symbol") == ctx.request.symbol
                 and signal.get("side") == side
+                and signal.get("action") == action
                 and signal.get("ts", 0) >= cutoff
             ):
                 return RuleResult(self.rule_code, "rejected", "短时间重复信号")

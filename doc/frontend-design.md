@@ -11,6 +11,8 @@
 | 数据请求 | TanStack Query 或等价请求缓存方案 |
 | 实时数据 | WebSocket |
 
+> **实现说明（2026-07）：** 依赖主版本以 `frontend/package.json` 为准（当前为 React 19 / antd 6 / ECharts 6 / react-router 7 / Vite 8 / TypeScript 6）；下文「包依赖」节与之对齐。路由采用 `React.lazy` 按页懒加载。
+
 ## 信息架构
 
 ```text
@@ -265,10 +267,21 @@ frontend/
 > 放 `src/router.tsx`。
 
 ```tsx
+import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
+import { Spin } from "antd";
 import MainLayout from "./layouts/MainLayout";
-import Dashboard from "./pages/Dashboard";
-// ... 其余页面
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+// ... 其余页面均 React.lazy 动态 import
+
+function LazyPage({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div style={{ padding: 48, textAlign: "center" }}><Spin tip="加载中…" /></div>}>
+      {children}
+    </Suspense>
+  );
+}
 
 export const router = createBrowserRouter([
   {
@@ -276,17 +289,9 @@ export const router = createBrowserRouter([
     element: <MainLayout />,
     children: [
       { index: true, element: <Navigate to="/dashboard" replace /> },
-      { path: "dashboard", element: <Dashboard /> },
-      { path: "market", element: <Market /> },
-      { path: "strategies", element: <Strategies /> },
-      { path: "trading", element: <Trading /> },
-      { path: "positions", element: <Positions /> },
-      { path: "history", element: <History /> },
-      { path: "ai-reports", element: <AiReports /> },
-      { path: "risk-settings", element: <RiskSettings /> },
-      { path: "settings", element: <Settings /> },
-      { path: "logs", element: <Logs /> },
-      { path: "*", element: <NotFound /> },
+      { path: "dashboard", element: <LazyPage><Dashboard /></LazyPage> },
+      // ... 其余路由同理包裹 LazyPage
+      { path: "*", element: <LazyPage><NotFound /></LazyPage> },
     ],
   },
 ]);
@@ -606,18 +611,22 @@ export const SYSTEM_STATUS_META: Record<string, { color: string; text: string }>
 
 ## 包依赖（package.json 关键项）
 
+> 主版本约定与 `frontend/package.json` 对齐；补丁/次版本以 lockfile 为准。若升级主版本，需同步更新本节与上文「技术栈」实现说明。
+
 ```json
 {
   "dependencies": {
-    "react": "^18", "react-dom": "^18", "react-router-dom": "^6",
-    "antd": "^5", "@ant-design/icons": "^5",
-    "echarts": "^5", "echarts-for-react": "^3",
+    "react": "^19", "react-dom": "^19", "react-router-dom": "^7",
+    "antd": "^6", "@ant-design/icons": "^6",
+    "echarts": "^6", "echarts-for-react": "^3",
     "@tanstack/react-query": "^5",
     "dayjs": "^1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4", "vite": "^5",
-    "typescript": "^5", "@types/react": "^18", "@types/react-dom": "^18"
+    "@vitejs/plugin-react": "^6", "vite": "^8",
+    "typescript": "~6",
+    "@types/react": "^19", "@types/react-dom": "^19",
+    "@types/node": "^24"
   }
 }
 ```

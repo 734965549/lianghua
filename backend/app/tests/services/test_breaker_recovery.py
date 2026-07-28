@@ -107,7 +107,7 @@ def test_emergency_stop_blocks_new_orders(db, reset_system_state, client):
     assert body["data"]["status"] == "emergency_stopped"
 
     risk = RiskService(db, correlation_id="test_es")
-    passed, results = risk.check(_make_request())
+    passed, results, _ = risk.check(_make_request())
     db.commit()
     assert passed is False
     assert any(r.rule_code == "RISK_SYSTEM_STATE" for r in results)
@@ -126,7 +126,7 @@ def test_trigger_breaker_and_status(db, reset_system_state):
     assert status["breaker_active"] is True
     assert status["system_status"] == "circuit_breaker"
 
-    passed, results = risk.check(_make_request())
+    passed, results, _ = risk.check(_make_request())
     assert passed is False
     assert any(r.rule_code == "RISK_SYSTEM_STATE" for r in results)
 

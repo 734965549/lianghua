@@ -1,3 +1,4 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -29,7 +30,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# 测试/CI 可通过 LIANGHUA_ALEMBIC_DATABASE_URL 覆盖目标库，避免误迁开发库
+_alembic_url = os.environ.get("LIANGHUA_ALEMBIC_DATABASE_URL") or settings.database_url
+config.set_main_option("sqlalchemy.url", _alembic_url)
 target_metadata = Base.metadata
 
 

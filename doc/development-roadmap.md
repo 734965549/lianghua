@@ -379,7 +379,7 @@
 ## 阶段 8：收尾与上线
 
 - [x] 跑 `testing-acceptance.md` §端到端验收场景：自动化冒烟 `scripts/acceptance_smoke.py` + 全量 pytest；完整手工 UI 场景见验收清单（Mock 工程项）。
-- [x] 跑 `pytest` 全套：当前 **66 passed**；覆盖率约 **74%**（`metrics_service` ≥85%、`ai_report_service`/`history` 关键路径已补测）。整体 80% 与 `strategy_service` 等深度覆盖留作持续改进。
+- [x] 跑 `pytest` 全套：当前 **170 passed**；整体覆盖率 **85%** ✅。文档关键模块均达标：`trade_service`/`order_service`/`risk_rules`/`mock_adapter`/`ai_report_service` 100%，`metrics_service` 95%，`strategy_service` 82%。含 P0-2 风控关口单测。
 - [x] 完善部署文档 `deployment-guide.md` 的启动脚本（落地 `start.ps1` / `stop.ps1` / `backup_db.ps1`）。
 - [x] 写 `README.md` 根目录版本，含快速启动命令。
 - [x] 整理 `open-questions.md`，已决策的标记「已确认」并补结论。

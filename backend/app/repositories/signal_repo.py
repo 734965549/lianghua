@@ -68,19 +68,19 @@ class SignalRepository(BaseRepository[StrategySignal]):
         strategy_id: str,
         symbol: str,
         side: OrderSide,
+        action: SignalAction | None = None,
         window_seconds: int,
         now: datetime | None = None,
     ) -> list[StrategySignal]:
         now = now or datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=window_seconds)
-        return (
-            self.db.query(StrategySignal)
-            .filter(
-                StrategySignal.strategy_id == strategy_id,
-                StrategySignal.symbol == symbol,
-                StrategySignal.side == side,
-                StrategySignal.signal_time >= cutoff,
-            )
-            .order_by(desc(StrategySignal.signal_time))
-            .all()
+        q = self.db.query(StrategySignal).filter(
+            StrategySignal.strategy_id == strategy_id,
+            StrategySignal.symbol == symbol,
+            StrategySignal.side == side,
+            StrategySignal.signal_time >= cutoff,
         )
+        if action is not None:
+            q = q.filter(StrategySignal.action == action)
+        return q.order_by(desc(StrategySignal.signal_time)).all()
+

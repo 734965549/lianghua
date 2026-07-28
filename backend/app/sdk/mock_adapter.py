@@ -14,16 +14,24 @@ from app.sdk.models import (
     CancelOrderResult,
     ConnectionEvent,
     KlineBar,
+    OrderQuery,
+    OrderSnapshot,
     OrderUpdateEvent,
     PlaceOrderRequest,
     PlaceOrderResult,
     QuoteSnapshot,
+    TradeQuery,
+    TradeSnapshot,
     TradeUpdateEvent,
+    coerce_order_query,
+    coerce_order_snapshots,
+    coerce_trade_query,
+    coerce_trade_snapshots,
 )
 
 
 class MockTradingAdapter(TradingAdapter):
-    """Mock 适配器：行情用 daemon Thread 推送，成交模拟用 Thread+sleep。"""
+    """Mock 适配器：行情与成交模拟使用 threading.Thread（与文档 asyncio 骨架功能等价）。"""
 
     def __init__(self, *, market: Market, config: dict | None = None):
         super().__init__()
@@ -35,6 +43,7 @@ class MockTradingAdapter(TradingAdapter):
         self._orders: dict[str, dict] = {}
         self._sdk_order_map: dict[str, str] = {}
         self._trades_seen: set[str] = set()
+        self._trades: list[TradeSnapshot] = []
         self._quote_thread: threading.Thread | None = None
         self._quote_stop = threading.Event()
         self._inject_fail = False
@@ -150,19 +159,25 @@ class MockTradingAdapter(TradingAdapter):
         price = Decimal("10.00") if self.market == Market.STOCK else Decimal("3500.00")
         max_bars = 2000
         while t < end and len(bars) < max_bars:
+            open_price = price
+            delta = Decimal(str(random.uniform(-0.15, 0.15)))
+            close_price = max(Decimal("0.01"), open_price + delta)
+            high_price = max(open_price, close_price) + Decimal(str(random.uniform(0, 0.1)))
+            low_price = max(Decimal("0.01"), min(open_price, close_price) - Decimal(str(random.uniform(0, 0.1))))
             bars.append(
                 KlineBar(
                     symbol=symbol,
                     market=self.market,
                     interval=interval,
                     bar_time=t,
-                    open=price,
-                    high=price + Decimal("0.1"),
-                    low=price - Decimal("0.1"),
-                    close=price,
-                    volume=Decimal("10000"),
+                    open=open_price.quantize(Decimal("0.01")),
+                    high=high_price.quantize(Decimal("0.01")),
+                    low=low_price.quantize(Decimal("0.01")),
+                    close=close_price.quantize(Decimal("0.01")),
+                    volume=Decimal(str(random.randint(5000, 50000))),
                 )
             )
+            price = close_price
             t += step
         return bars
 
@@ -252,6 +267,18 @@ class MockTradingAdapter(TradingAdapter):
             if sdk_trade_id in self._trades_seen:
                 return
             self._trades_seen.add(sdk_trade_id)
+            snap = TradeSnapshot(
+                sdk_trade_id=sdk_trade_id,
+                client_order_id=client_order_id,
+                sdk_order_id=sdk_order_id,
+                symbol=symbol,
+                market=self.market,
+                side=side,
+                price=price,
+                quantity=qty,
+                trade_time=datetime.now(timezone.utc),
+            )
+            self._trades.append(snap)
         if self._on_trade_update:
             self._on_trade_update(
                 TradeUpdateEvent(
@@ -310,7 +337,8 @@ class MockTradingAdapter(TradingAdapter):
             message="Mock 撤单成功",
         )
 
-    def query_orders(self, filters: dict) -> list[dict]:
+    def query_orders(self, filters: OrderQuery | dict | None = None) -> list[OrderSnapshot]:
+        _ = coerce_order_query(filters)
         with self._lock:
             rows = []
             for client_order_id, order in self._orders.items():
@@ -322,12 +350,25 @@ class MockTradingAdapter(TradingAdapter):
                         "filled": str(order.get("filled", "0")),
                         "filled_quantity": str(order.get("filled", "0")),
                         "remaining_quantity": str(order.get("remaining", "0")),
+                        "symbol": order.get("symbol"),
+                        "market": self.market,
                     }
                 )
-            return rows
+            return coerce_order_snapshots(rows)
 
-    def query_trades(self, filters: dict) -> list[dict]:
-        return []
+    def query_trades(self, filters: TradeQuery | dict | None = None) -> list[TradeSnapshot]:
+        q = coerce_trade_query(filters)
+        with self._lock:
+            rows = list(self._trades)
+        if q.client_order_id:
+            rows = [t for t in rows if t.client_order_id == q.client_order_id]
+        if q.sdk_order_id:
+            rows = [t for t in rows if t.sdk_order_id == q.sdk_order_id]
+        if q.symbol:
+            rows = [t for t in rows if t.symbol == q.symbol]
+        if q.sdk_trade_id:
+            rows = [t for t in rows if t.sdk_trade_id == q.sdk_trade_id]
+        return coerce_trade_snapshots(rows)
 
     def inject_next_order_fail(self) -> None:
         self._inject_fail = True

@@ -135,3 +135,110 @@ class ConnectionEvent(BaseModel):
     connected: bool
     reason: str = ""
     event_time: datetime
+
+
+class OrderQuery(BaseModel):
+    """订单查询过滤条件。"""
+
+    client_order_id: str | None = None
+    sdk_order_id: str | None = None
+    symbol: str | None = None
+    status: OrderStatus | str | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class TradeQuery(BaseModel):
+    """成交查询过滤条件。"""
+
+    client_order_id: str | None = None
+    sdk_order_id: str | None = None
+    symbol: str | None = None
+    sdk_trade_id: str | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class OrderSnapshot(BaseModel):
+    """轮询/查询得到的订单快照。"""
+
+    client_order_id: str | None = None
+    sdk_order_id: str | None = None
+    status: OrderStatus | str
+    filled_quantity: Decimal = Decimal("0")
+    remaining_quantity: Decimal = Decimal("0")
+    symbol: str | None = None
+    market: Market | None = None
+    raw_payload: dict | None = None
+
+
+class TradeSnapshot(BaseModel):
+    """轮询/查询得到的成交快照。"""
+
+    sdk_trade_id: str
+    client_order_id: str | None = None
+    sdk_order_id: str | None = None
+    symbol: str = ""
+    market: Market | None = None
+    side: OrderSide | str | None = None
+    price: Decimal = Decimal("0")
+    quantity: Decimal = Decimal("0")
+    fee: Decimal = Decimal("0")
+    trade_time: datetime | None = None
+    raw_payload: dict | None = None
+
+
+def coerce_order_query(filters: OrderQuery | dict | None) -> OrderQuery:
+    if filters is None:
+        return OrderQuery()
+    if isinstance(filters, OrderQuery):
+        return filters
+    return OrderQuery.model_validate(filters)
+
+
+def coerce_trade_query(filters: TradeQuery | dict | None) -> TradeQuery:
+    if filters is None:
+        return TradeQuery()
+    if isinstance(filters, TradeQuery):
+        return filters
+    return TradeQuery.model_validate(filters)
+
+
+def coerce_order_snapshots(rows: list) -> list[OrderSnapshot]:
+    out: list[OrderSnapshot] = []
+    for r in rows:
+        if isinstance(r, OrderSnapshot):
+            out.append(r)
+            continue
+        d = dict(r)
+        if "filled_quantity" not in d and d.get("filled") is not None:
+            d["filled_quantity"] = d["filled"]
+        out.append(OrderSnapshot.model_validate(d))
+    return out
+
+
+def coerce_trade_snapshots(rows: list) -> list[TradeSnapshot]:
+    out: list[TradeSnapshot] = []
+    for r in rows:
+        if isinstance(r, TradeSnapshot):
+            out.append(r)
+            continue
+        if isinstance(r, TradeUpdateEvent):
+            out.append(
+                TradeSnapshot(
+                    sdk_trade_id=r.sdk_trade_id,
+                    client_order_id=r.client_order_id,
+                    sdk_order_id=r.sdk_order_id,
+                    symbol=r.symbol,
+                    market=r.market,
+                    side=r.side,
+                    price=r.price,
+                    quantity=r.quantity,
+                    fee=r.fee,
+                    trade_time=r.trade_time,
+                    raw_payload=r.raw_payload,
+                )
+            )
+            continue
+        out.append(TradeSnapshot.model_validate(r))
+    return out

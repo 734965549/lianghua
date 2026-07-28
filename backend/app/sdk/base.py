@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Callable
 
 from app.schemas.enums import Market
+from app.schemas.error_codes import ErrorCode
 from app.sdk.models import (
     AccountSnapshot,
     AdapterStatus,
@@ -9,11 +10,15 @@ from app.sdk.models import (
     CancelOrderResult,
     ConnectionEvent,
     KlineBar,
+    OrderQuery,
+    OrderSnapshot,
     OrderUpdateEvent,
     PlaceOrderRequest,
     PlaceOrderResult,
     PositionSnapshot,
     QuoteSnapshot,
+    TradeQuery,
+    TradeSnapshot,
     TradeUpdateEvent,
 )
 
@@ -40,42 +45,42 @@ class AdapterError(Exception):
 
 class SDKNotConfigured(AdapterError):
     def __init__(self, msg: str = "SDK 未配置"):
-        super().__init__("SDK_NOT_CONFIGURED", msg)
+        super().__init__(ErrorCode.SDK_NOT_CONFIGURED, msg)
 
 
 class SDKConnectionFailed(AdapterError):
     def __init__(self, msg: str = "SDK 连接失败", **kw):
-        super().__init__("SDK_CONNECTION_FAILED", msg, retryable=True, **kw)
+        super().__init__(ErrorCode.SDK_CONNECTION_FAILED, msg, retryable=True, **kw)
 
 
 class SDKAuthFailed(AdapterError):
     def __init__(self, msg: str = "SDK 授权失败", **kw):
-        super().__init__("SDK_AUTH_FAILED", msg, **kw)
+        super().__init__(ErrorCode.SDK_AUTH_FAILED, msg, **kw)
 
 
 class SDKTimeout(AdapterError):
     def __init__(self, msg: str = "SDK 调用超时", **kw):
-        super().__init__("SDK_TIMEOUT", msg, retryable=True, **kw)
+        super().__init__(ErrorCode.SDK_TIMEOUT, msg, retryable=True, **kw)
 
 
 class SDKResponseInvalid(AdapterError):
     def __init__(self, msg: str = "SDK 返回字段异常", **kw):
-        super().__init__("SDK_RESPONSE_INVALID", msg, **kw)
+        super().__init__(ErrorCode.SDK_RESPONSE_INVALID, msg, **kw)
 
 
 class SDKOrderRejected(AdapterError):
     def __init__(self, msg: str = "SDK 拒绝委托", **kw):
-        super().__init__("SDK_ORDER_REJECTED", msg, **kw)
+        super().__init__(ErrorCode.SDK_ORDER_REJECTED, msg, **kw)
 
 
 class SDKCancelRejected(AdapterError):
     def __init__(self, msg: str = "SDK 拒绝撤单", **kw):
-        super().__init__("SDK_CANCEL_REJECTED", msg, **kw)
+        super().__init__(ErrorCode.SDK_CANCEL_REJECTED, msg, **kw)
 
 
 class SDKDisconnected(AdapterError):
     def __init__(self, msg: str = "SDK 连接中断", **kw):
-        super().__init__("SDK_DISCONNECTED", msg, retryable=True, **kw)
+        super().__init__(ErrorCode.SDK_DISCONNECTED, msg, retryable=True, **kw)
 
 
 class TradingAdapter(ABC):
@@ -123,10 +128,10 @@ class TradingAdapter(ABC):
     def subscribe_quotes(self, symbols: list[str]) -> None: ...
 
     @abstractmethod
-    def query_orders(self, filters: dict) -> list[dict]: ...
+    def query_orders(self, filters: OrderQuery | dict | None = None) -> list[OrderSnapshot]: ...
 
     @abstractmethod
-    def query_trades(self, filters: dict) -> list[dict]: ...
+    def query_trades(self, filters: TradeQuery | dict | None = None) -> list[TradeSnapshot]: ...
 
     @abstractmethod
     def place_order(self, request: PlaceOrderRequest) -> PlaceOrderResult: ...

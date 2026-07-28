@@ -83,8 +83,8 @@ def test_place_order_and_local_mapping(adapter):
     assert events[0].sdk_order_id == result.sdk_order_id
 
     polled = adapter.query_orders({})
-    row = next(r for r in polled if r["client_order_id"] == "stock_test_1")
-    assert row["sdk_order_id"] == result.sdk_order_id
+    row = next(r for r in polled if r.client_order_id == "stock_test_1")
+    assert row.sdk_order_id == result.sdk_order_id
 
 
 @pytest.mark.unit

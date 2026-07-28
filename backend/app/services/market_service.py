@@ -105,10 +105,22 @@ class MarketService:
         for adapter in (sdk_manager.get_stock_adapter(), sdk_manager.get_futures_adapter()):
             adapter.on_order_update(order_service.on_order_update)
             adapter.on_trade_update(trade_service.on_trade_update)
-        for market, symbols in DEFAULT_SUBSCRIPTIONS.items():
-            self.subscribe(symbols, market)
+
+        db = SessionLocal()
+        try:
+            from app.services.watchlist_service import watchlist_service
+
+            watchlist_service.ensure_defaults(db)
+            subs = watchlist_service.get_enabled_subscriptions(db)
+            db.commit()
+        finally:
+            db.close()
+
+        for market, symbols in subs.items():
+            if symbols:
+                self.subscribe(symbols, market)
         self._started = True
-        logger.info("MarketService 已启动，默认订阅 %s", DEFAULT_SUBSCRIPTIONS)
+        logger.info("MarketService 已启动，股票池订阅 %s", subs)
 
     def stop(self) -> None:
         if not self._started:
@@ -158,6 +170,19 @@ class MarketService:
             for sym in symbols:
                 result.append((mkt, sym))
         return result
+
+    def sync_watchlist_subscriptions(self, db: Session) -> None:
+        """根据股票池变更同步订阅。"""
+        from app.services.watchlist_service import watchlist_service
+
+        subs = watchlist_service.get_enabled_subscriptions(db)
+        for market, symbols in subs.items():
+            current = self._subscribed.get(market, set())
+            desired = set(symbols)
+            to_add = desired - current
+            if to_add:
+                self.subscribe(list(to_add), market)
+            # 暂不自动取消订阅，避免短暂禁用导致丢行情
 
     def list_quotes(
         self,

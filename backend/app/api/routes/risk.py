@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_correlation_id, get_db
-from app.api.response import ok
+from app.api.response import BizError, ok
+from app.schemas.error_codes import ErrorCode
 from app.schemas.strategy import EmergencyStopRequest, RiskResumeRequest, RiskSettingsUpdate
 from app.services.risk_service import RiskService
 
@@ -45,8 +46,13 @@ def update_risk_settings(
     db: Session = Depends(get_db),
     correlation_id: str = Depends(get_correlation_id),
 ):
+    if not body.confirm:
+        raise BizError(ErrorCode.RISK_CONFIRM_REQUIRED, "修改风控配置需要 confirm=true")
     svc = RiskService(db, correlation_id=correlation_id)
-    data = svc.update_settings(body.model_dump(exclude_none=True))
+    payload = body.model_dump(exclude_none=True)
+    payload.pop("confirm", None)
+    reason = str(payload.pop("reason", "") or "")
+    data = svc.update_settings(payload, reason=reason)
     db.commit()
     return ok(data, correlation_id=correlation_id)
 
@@ -70,9 +76,7 @@ def risk_resume(
     correlation_id: str = Depends(get_correlation_id),
 ):
     if not body.confirm:
-        from app.api.response import BizError
-
-        raise BizError("RISK_CONFIRM_REQUIRED", "恢复交易需要 confirm=true")
+        raise BizError(ErrorCode.RISK_CONFIRM_REQUIRED, "恢复交易需要 confirm=true")
     svc = RiskService(db, correlation_id=correlation_id)
     data = svc.resume(body.reason)
     db.commit()

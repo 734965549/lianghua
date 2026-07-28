@@ -26,6 +26,7 @@ def test_fifo_pnl_win_rate_and_fees():
             "quantity": "100",
             "fee": "2",
             "trade_time": _dt("2026-06-01T10:00:00"),
+            "strategy_id": "ma_cross",
         },
         {
             "symbol": "600000.SH",
@@ -34,6 +35,7 @@ def test_fifo_pnl_win_rate_and_fees():
             "quantity": "100",
             "fee": "1",
             "trade_time": _dt("2026-06-01T11:00:00"),
+            "strategy_id": "ma_cross",
         },
         {
             "symbol": "600000.SH",
@@ -42,6 +44,7 @@ def test_fifo_pnl_win_rate_and_fees():
             "quantity": "50",
             "fee": "1",
             "trade_time": _dt("2026-06-02T10:00:00"),
+            "strategy_id": "ma_cross",
         },
         {
             "symbol": "600000.SH",
@@ -50,6 +53,7 @@ def test_fifo_pnl_win_rate_and_fees():
             "quantity": "50",
             "fee": "1",
             "trade_time": _dt("2026-06-02T11:00:00"),
+            "strategy_id": "ma_cross",
         },
     ]
     # MetricsService.__init__ 需要 db，这里只测纯函数入口
@@ -66,6 +70,9 @@ def test_fifo_pnl_win_rate_and_fees():
     assert result["consecutive_loss_count"] == 1
     assert result["daily_pnl"]["2026-06-01"] == "200"
     assert result["daily_pnl"]["2026-06-02"] == "-100"
+    assert Decimal(result["trade_frequency"]) == Decimal("2.00")  # 4 笔 / 2 天
+    assert "ma_cross" in result["by_strategy"]
+    assert result["strategy_ranking"][0]["strategy_id"] == "ma_cross"
 
 
 def test_empty_trades():

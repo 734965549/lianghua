@@ -6,6 +6,7 @@ class StrategyStartRequest(BaseModel):
     run_mode: str = "live"
     symbols: list[str] = Field(default_factory=list)
     parameters: dict | None = None
+    reason: str = Field(default="", description="启动原因，写入审计日志")
 
 
 class StrategyStopRequest(BaseModel):
@@ -18,6 +19,7 @@ class StrategyParametersUpdate(BaseModel):
 
 
 class RiskSettingsUpdate(BaseModel):
+    confirm: bool = False
     allowed_symbols: list[str] | None = None
     blocked_symbols: list[str] | None = None
     trading_sessions: list | None = None
@@ -32,6 +34,7 @@ class RiskSettingsUpdate(BaseModel):
     consecutive_order_fail_limit: int | None = None
     duplicate_signal_window_seconds: int | None = None
     auto_cancel_on_breaker: bool | None = None
+    reason: str | None = Field(default=None, description="变更原因，写入审计日志")
 
 
 class EmergencyStopRequest(BaseModel):
@@ -41,7 +44,7 @@ class EmergencyStopRequest(BaseModel):
 
 class RiskResumeRequest(BaseModel):
     confirm: bool = False
-    reason: str = ""
+    reason: str = Field(min_length=1, description="恢复原因，必填并写入审计")
 
 
 class ConfirmUnknownOrderRequest(BaseModel):
