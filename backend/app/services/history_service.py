@@ -5,15 +5,18 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.time import as_utc, to_utc_iso
+from app.core.text import repair_display_text
 from app.db.models.audit_log import AuditLog
 from app.db.models.strategy_signal import StrategySignal
 from app.repositories.order_repo import OrderRepository
 from app.repositories.risk_repo import RiskRepository
 from app.repositories.trade_repo import TradeRepository
-from app.schemas.enums import Market, OrderStatus
+from app.schemas.enums import Market, OrderSide, OrderStatus, PriceType
 from app.services.order_service import order_to_dict
 from app.services.trade_service import trade_to_dict
 
@@ -49,6 +52,56 @@ TRADE_CSV_HEADERS = [
 ]
 
 
+def _historical_data_quality(order, trades: list, signal=None) -> dict:
+    issues: list[str] = []
+    if str(order.sdk_order_id or "").upper().startswith("MOCK"):
+        issues.append("simulated_sdk_record")
+
+    limit_price = Decimal(str(order.price or 0))
+    if order.price_type == PriceType.LIMIT and limit_price > 0:
+        for trade in trades:
+            fill_price = Decimal(str(trade.price))
+            crossed_limit = (
+                order.side == OrderSide.BUY and fill_price > limit_price
+            ) or (
+                order.side == OrderSide.SELL and fill_price < limit_price
+            )
+            if crossed_limit:
+                issues.append(
+                    f"limit_price_violation:{fill_price} vs {limit_price}"
+                )
+                break
+
+    if signal is not None and signal.signal_time and order.created_at:
+        delta = abs(
+            (as_utc(signal.signal_time) - as_utc(order.created_at)).total_seconds()
+        )
+        if 7.5 * 3600 <= delta <= 8.5 * 3600:
+            issues.append("legacy_timezone_offset_8h")
+
+    classification = (
+        "historical_test_data"
+        if any(
+            issue.startswith("limit_price_violation")
+            or issue == "legacy_timezone_offset_8h"
+            for issue in issues
+        )
+        else "simulated_data"
+        if "simulated_sdk_record" in issues
+        else "production_data"
+    )
+    return {
+        "classification": classification,
+        "isolated": classification == "historical_test_data",
+        "issues": issues,
+        "label": {
+            "historical_test_data": "历史测试脏数据",
+            "simulated_data": "模拟交易数据",
+            "production_data": "正常记录",
+        }[classification],
+    }
+
+
 class HistoryService:
     def __init__(self, db: Session):
         self.db = db
@@ -79,7 +132,12 @@ class HistoryService:
             offset=offset,
             limit=page_size,
         )
-        return [order_to_dict(r) for r in rows], total
+        items: list[dict] = []
+        for row in rows:
+            trades = self.trades.list_by_client_order_id(row.client_order_id)
+            quality = _historical_data_quality(row, trades)
+            items.append({**order_to_dict(row), "data_quality": quality})
+        return items, total
 
     def list_trades(
         self,
@@ -102,7 +160,31 @@ class HistoryService:
             offset=offset,
             limit=page_size,
         )
-        return [trade_to_dict(r) for r in rows], total
+        items: list[dict] = []
+        quality_by_order: dict[str, dict] = {}
+        for row in rows:
+            if row.client_order_id not in quality_by_order:
+                order = self.orders.get_by_client_order_id(row.client_order_id)
+                quality_by_order[row.client_order_id] = (
+                    _historical_data_quality(
+                        order,
+                        self.trades.list_by_client_order_id(row.client_order_id),
+                    )
+                    if order is not None
+                    else {
+                        "classification": "historical_test_data",
+                        "isolated": True,
+                        "issues": ["orphan_trade"],
+                        "label": "历史测试脏数据",
+                    }
+                )
+            items.append(
+                {
+                    **trade_to_dict(row),
+                    "data_quality": quality_by_order[row.client_order_id],
+                }
+            )
+        return items, total
 
     def orders_csv(
         self,
@@ -213,8 +295,9 @@ class HistoryService:
             .all()
         )
 
+        data_quality = _historical_data_quality(order, trades, signal)
         return {
-            "order": order_to_dict(order),
+            "order": {**order_to_dict(order), "data_quality": data_quality},
             "signal": (
                 {
                     "signal_id": str(signal.signal_id),
@@ -225,8 +308,8 @@ class HistoryService:
                     "action": signal.action.value,
                     "price": str(signal.price),
                     "quantity": str(signal.quantity),
-                    "reason": signal.reason,
-                    "signal_time": signal.signal_time.isoformat(),
+                    "reason": repair_display_text(signal.reason),
+                    "signal_time": to_utc_iso(signal.signal_time),
                 }
                 if signal
                 else None
@@ -237,15 +320,19 @@ class HistoryService:
                     "result": c.result.value,
                     "rule_code": c.rule_code,
                     "reason": c.reason,
-                    "checked_at": c.checked_at.isoformat(),
+                    "checked_at": to_utc_iso(c.checked_at),
                 }
                 for c in risk_checks
             ],
-            "trades": [trade_to_dict(t) for t in trades],
+            "trades": [
+                {**trade_to_dict(t), "data_quality": data_quality}
+                for t in trades
+            ],
+            "data_quality": data_quality,
             "audit_logs": [
                 {
                     "id": a.id,
-                    "event_time": a.event_time.isoformat(),
+                    "event_time": to_utc_iso(a.event_time),
                     "action": a.action,
                     "module": a.module,
                     "result": a.result,

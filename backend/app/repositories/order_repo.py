@@ -68,6 +68,7 @@ class OrderRepository(BaseRepository[Order]):
         market: Market | None = None,
         symbol: str | None = None,
         status: OrderStatus | None = None,
+        statuses: set[OrderStatus] | None = None,
         strategy_id: str | None = None,
         start: datetime | None = None,
         end: datetime | None = None,
@@ -81,6 +82,8 @@ class OrderRepository(BaseRepository[Order]):
             q = q.filter(Order.symbol == symbol)
         if status is not None:
             q = q.filter(Order.status == status)
+        if statuses is not None:
+            q = q.filter(Order.status.in_(statuses))
         if strategy_id:
             q = q.filter(Order.strategy_id == strategy_id)
         if start is not None:

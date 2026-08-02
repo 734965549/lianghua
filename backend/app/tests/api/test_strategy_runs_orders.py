@@ -124,8 +124,17 @@ def test_confirm_unknown_order(client, db, reset_system_state):
 @pytest.mark.integration
 def test_resume_after_confirm_unknown(client, db, reset_system_state):
     from app.sdk import manager as sdk_manager
+    from app.repositories.asset_repo import AssetRepository
 
     sdk_manager.ensure_connected()
+    assets = AssetRepository(db)
+    accounts = AccountRepository(db)
+    for market in (Market.STOCK, Market.FUTURES):
+        account = accounts.get_or_create_default(market)
+        assets.insert_snapshot(
+            account.id,
+            sdk_manager.get_adapter_for_market(market).get_account(),
+        )
     cid = _create_unknown_order(db)
     try:
         svc = SystemStateService(db, correlation_id="test_resume_after_confirm")

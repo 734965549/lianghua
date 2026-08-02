@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_correlation_id, get_db
 from app.api.response import ok
+from app.core.time import to_utc_iso
+from app.core.text import repair_display_text
 from app.repositories.signal_repo import SignalRepository
 
 router = APIRouter(tags=["signals"])
@@ -19,8 +21,8 @@ def _signal_to_dict(row) -> dict:
         "price_type": row.price_type.value,
         "price": str(row.price),
         "quantity": str(row.quantity),
-        "reason": row.reason,
-        "signal_time": row.signal_time.isoformat(),
+        "reason": repair_display_text(row.reason),
+        "signal_time": to_utc_iso(row.signal_time),
         "metadata": row.metadata_,
     }
 

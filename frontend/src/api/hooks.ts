@@ -30,11 +30,14 @@ export function useOrders<T = Record<string, unknown>>(
   page = 1,
   pageSize = 50,
   refetchInterval = 8000,
+  scope: "active" | "attention" | "all" = "all",
 ) {
   return useQuery({
-    queryKey: ["orders", page, pageSize],
+    queryKey: ["orders", page, pageSize, scope],
     queryFn: () =>
-      api.get<Paged<T>>(`/orders?page=${page}&page_size=${pageSize}`),
+      api.get<Paged<T>>(
+        `/orders?page=${page}&page_size=${pageSize}&scope=${scope}`,
+      ),
     refetchInterval,
   });
 }

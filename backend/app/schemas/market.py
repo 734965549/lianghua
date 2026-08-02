@@ -6,3 +6,4 @@ from app.schemas.enums import Market
 class QuoteSubscriptionRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1)
     market: Market
+    subscriber_id: str = "default"

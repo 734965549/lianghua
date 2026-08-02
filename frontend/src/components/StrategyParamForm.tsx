@@ -26,6 +26,12 @@ type Props = {
   submitText?: string;
 };
 
+type FieldsProps = {
+  schema?: Record<string, unknown> | null;
+  namePrefix?: string;
+  showFallback?: boolean;
+};
+
 function propType(prop: JsonSchemaProperty): string {
   const t = prop.type;
   if (Array.isArray(t)) return t.find((x) => x !== "null") ?? "string";
@@ -126,6 +132,58 @@ function renderControl(prop: JsonSchemaProperty) {
   return <Input />;
 }
 
+export function StrategyParamFields({
+  schema,
+  namePrefix,
+  showFallback = true,
+}: FieldsProps) {
+  const jsonSchema = schema as JsonSchema | undefined;
+  const properties = jsonSchema?.properties;
+  const required = new Set(jsonSchema?.required ?? []);
+  const hasSchema = !!properties && Object.keys(properties).length > 0;
+  const fieldName = (key: string) => (namePrefix ? [namePrefix, key] : key);
+
+  if (hasSchema) {
+    return Object.entries(properties).map(([key, prop]) => {
+      const t = propType(prop);
+      const label = prop.title ?? key;
+      return (
+        <Form.Item
+          key={key}
+          name={fieldName(key)}
+          label={t === "array" ? `${label}（逗号分隔）` : label}
+          extra={prop.description}
+          valuePropName={t === "boolean" ? "checked" : "value"}
+          rules={required.has(key) ? [{ required: true, message: `请填写${label}` }] : undefined}
+        >
+          {renderControl(prop)}
+        </Form.Item>
+      );
+    });
+  }
+
+  if (!showFallback) return null;
+  return (
+    <>
+      <Form.Item name={fieldName("symbols")} label="标的（逗号分隔）" rules={[{ required: true }]}>
+        <Input />
+      </Form.Item>
+      <Form.Item name={fieldName("fast")} label="快线" rules={[{ required: true }]}>
+        <InputNumber min={1} style={{ width: "100%" }} />
+      </Form.Item>
+      <Form.Item name={fieldName("slow")} label="慢线" rules={[{ required: true }]}>
+        <InputNumber min={2} style={{ width: "100%" }} />
+      </Form.Item>
+      <Form.Item name={fieldName("interval")} label="周期">
+        <Input placeholder="1m / 5m" />
+      </Form.Item>
+      <Form.Item name={fieldName("quantity")} label="数量" rules={[{ required: true }]}>
+        <InputNumber min={1} style={{ width: "100%" }} />
+      </Form.Item>
+    </>
+  );
+}
+
 export default function StrategyParamForm({
   schema,
   form: externalForm,
@@ -136,10 +194,6 @@ export default function StrategyParamForm({
 }: Props) {
   const [internalForm] = Form.useForm();
   const form = externalForm ?? internalForm;
-  const jsonSchema = schema as JsonSchema | undefined;
-  const properties = jsonSchema?.properties;
-  const required = new Set(jsonSchema?.required ?? []);
-  const hasSchema = !!properties && Object.keys(properties).length > 0;
 
   useEffect(() => {
     if (initialValues) {
@@ -149,42 +203,7 @@ export default function StrategyParamForm({
 
   return (
     <Form form={form} layout="vertical" onFinish={onFinish}>
-      {hasSchema
-        ? Object.entries(properties).map(([key, prop]) => {
-            const t = propType(prop);
-            const label = prop.title ?? key;
-            return (
-              <Form.Item
-                key={key}
-                name={key}
-                label={t === "array" ? `${label}（逗号分隔）` : label}
-                extra={prop.description}
-                valuePropName={t === "boolean" ? "checked" : "value"}
-                rules={required.has(key) ? [{ required: true, message: `请填写${label}` }] : undefined}
-              >
-                {renderControl(prop)}
-              </Form.Item>
-            );
-          })
-        : (
-          <>
-            <Form.Item name="symbols" label="标的（逗号分隔）" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="fast" label="快线" rules={[{ required: true }]}>
-              <InputNumber min={1} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item name="slow" label="慢线" rules={[{ required: true }]}>
-              <InputNumber min={2} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item name="interval" label="周期">
-              <Input placeholder="1m / 5m" />
-            </Form.Item>
-            <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
-              <InputNumber min={1} style={{ width: "100%" }} />
-            </Form.Item>
-          </>
-        )}
+      <StrategyParamFields schema={schema} />
       <Button type="primary" htmlType="submit" loading={loading} block>
         {submitText}
       </Button>

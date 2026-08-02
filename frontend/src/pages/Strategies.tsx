@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { Alert, Card, Drawer, Form, Table, Tag, Typography, Button, message } from "antd";
+import { useNavigate } from "react-router-dom";
+import { Alert, Button, Card, Drawer, Form, Table, Tag, message } from "antd";
+import {
+  CheckCircleOutlined,
+  RadarChartOutlined,
+  RobotOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -10,6 +17,11 @@ import StrategyParamForm, {
   getInitialFormValues,
 } from "../components/StrategyParamForm";
 import type { Paged } from "../api/types";
+import MetricCard from "../components/MetricCard";
+import PageHeader from "../components/PageHeader";
+import EnumLabel from "../components/EnumLabel";
+import { formatTime } from "../utils/format";
+import { archiveStrategy, cloneStrategy } from "../api/strategies";
 
 type Strategy = StrategyRow;
 
@@ -36,6 +48,7 @@ type StrategyRun = {
 };
 
 export default function Strategies() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [paramOpen, setParamOpen] = useState(false);
   const [current, setCurrent] = useState<Strategy | null>(null);
@@ -131,14 +144,72 @@ export default function Strategies() {
     setParamOpen(true);
   };
 
+  const cloneMut = useMutation({
+    mutationFn: (strategyId: string) => cloneStrategy(strategyId),
+    onSuccess: () => {
+      message.success("策略已克隆");
+      qc.invalidateQueries({ queryKey: ["strategies"] });
+    },
+  });
+
+  const archiveMut = useMutation({
+    mutationFn: (strategyId: string) => archiveStrategy(strategyId),
+    onSuccess: () => {
+      message.success("策略已归档");
+      qc.invalidateQueries({ queryKey: ["strategies"] });
+    },
+  });
+
+  const strategyRows = strategies.data ?? [];
+  const runningCount = strategyRows.filter((item) => item.running).length;
+  const rejectedChecks = (checks.data?.items ?? []).filter((item) => item.result !== "passed").length;
+
   return (
     <div>
-      <Typography.Title level={3} style={{ marginTop: 0 }}>
-        策略监控
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        信号生成后强制过风控；进程重启后需确认再启动策略。
-      </Typography.Paragraph>
+      <PageHeader
+        eyebrow="STRATEGY / PULSE MONITOR"
+        title="策略脉冲"
+        description="观察策略运行、信号生成与风控命中；重启后的策略必须人工确认，避免进程恢复时误下单。"
+        meta={
+          <span className={`status-chip status-chip--${runningCount > 0 ? "success" : "warning"}`}>
+            {runningCount} 个运行中
+          </span>
+        }
+      />
+
+      <section className="research-summary">
+        <MetricCard
+          title="策略总数"
+          value={strategyRows.length}
+          loading={strategies.isLoading}
+          hint="已注册策略模块"
+          icon={<RobotOutlined />}
+        />
+        <MetricCard
+          title="运行实例"
+          value={runningCount}
+          loading={strategies.isLoading}
+          hint="当前活跃执行实例"
+          icon={<RadarChartOutlined />}
+          status={runningCount > 0 ? "success" : "warning"}
+        />
+        <MetricCard
+          title="最新信号"
+          value={signals.data?.total ?? 0}
+          loading={signals.isLoading}
+          hint="可追溯策略信号"
+          icon={<CheckCircleOutlined />}
+          status="success"
+        />
+        <MetricCard
+          title="风控异常"
+          value={rejectedChecks}
+          loading={checks.isLoading}
+          hint="最近检查中的非通过项"
+          icon={<WarningOutlined />}
+          status={rejectedChecks > 0 ? "error" : "success"}
+        />
+      </section>
 
       {(pendingRuns.data?.items.length ?? 0) > 0 ? (
         <Alert
@@ -146,23 +217,35 @@ export default function Strategies() {
           showIcon
           banner
           style={{ marginBottom: 16 }}
-          message={`${pendingRuns.data?.items.length} 个策略运行实例待确认重启（进程重启后不会自动恢复）`}
+          title={`${pendingRuns.data?.items.length} 个策略运行实例待确认重启（进程重启后不会自动恢复）`}
         />
       ) : null}
 
-      <Card title="策略列表" size="small" style={{ marginBottom: 16 }}>
+      <Card
+        title="策略运行矩阵"
+        size="small"
+        style={{ marginBottom: 12 }}
+        extra={
+          <Button type="primary" onClick={() => navigate("/strategies/new")}>
+            新建策略
+          </Button>
+        }
+      >
         <StrategyTable
-          dataSource={strategies.data ?? []}
+          dataSource={strategyRows}
           loading={strategies.isLoading}
           pendingByStrategy={pendingByStrategy}
           onOpenParams={openParams}
           onStart={(row) => openStartConfirm(row, "start")}
           onRestart={(row) => openStartConfirm(row, "restart")}
           onStop={(row) => stop.mutate(row.strategy_id)}
+          onEdit={(row) => navigate(`/strategies/${row.strategy_id}/edit`)}
+          onClone={(row) => cloneMut.mutate(row.strategy_id)}
+          onArchive={(row) => archiveMut.mutate(row.strategy_id)}
         />
       </Card>
 
-      <Card title="最新信号" size="small">
+      <Card title="实时信号与风控结果" size="small">
         <Table
           rowKey="signal_id"
           size="small"
@@ -170,11 +253,26 @@ export default function Strategies() {
           dataSource={signals.data?.items ?? []}
           pagination={{ pageSize: 10, total: signals.data?.total }}
           columns={[
-            { title: "时间", dataIndex: "signal_time", width: 180 },
+            {
+              title: "时间",
+              dataIndex: "signal_time",
+              width: 180,
+              render: (value: string) => formatTime(value, "MM-DD HH:mm:ss"),
+            },
             { title: "策略", dataIndex: "strategy_id", width: 100 },
             { title: "标的", dataIndex: "symbol", width: 110 },
-            { title: "方向", dataIndex: "side", width: 70 },
-            { title: "动作", dataIndex: "action", width: 70 },
+            {
+              title: "方向",
+              dataIndex: "side",
+              width: 70,
+              render: (value: string) => <EnumLabel value={value} kind="side" />,
+            },
+            {
+              title: "动作",
+              dataIndex: "action",
+              width: 70,
+              render: (value: string) => <EnumLabel value={value} kind="action" />,
+            },
             { title: "数量", dataIndex: "quantity", width: 80 },
             { title: "原因", dataIndex: "reason" },
             {
@@ -192,7 +290,9 @@ export default function Strategies() {
                       setCheckOpen(true);
                     }}
                   >
-                    <Tag color={c.result === "passed" ? "green" : "red"}>{c.result}</Tag>
+                    <Tag color={c.result === "passed" ? "green" : "red"}>
+                      <EnumLabel value={c.result} kind="risk" />
+                    </Tag>
                     {c.rule_code || "详情"}
                   </Button>
                 );
@@ -206,7 +306,7 @@ export default function Strategies() {
         title={`参数 · ${current?.name ?? ""}`}
         open={paramOpen}
         onClose={() => setParamOpen(false)}
-        width={420}
+        size="large"
       >
         <StrategyParamForm
           schema={current?.parameters_schema}

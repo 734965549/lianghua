@@ -1,19 +1,68 @@
+from datetime import datetime
+from decimal import Decimal
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_correlation_id, get_db
 from app.api.response import BizError, ok
-from app.schemas.enums import Market, OrderStatus
+from app.schemas.enums import Market, OrderSide, OrderStatus, PriceType, SignalAction
 from app.schemas.error_codes import ErrorCode
 from app.schemas.strategy import ConfirmUnknownOrderRequest
-from app.services.order_service import order_service, order_to_dict
+from app.services.manual_order_service import manual_order_service
+from app.services.order_service import CANCELLABLE, order_service, order_to_dict
 
 router = APIRouter(tags=["orders"])
+
+ATTENTION_ORDER_STATUSES = {
+    OrderStatus.PENDING_RISK,
+    OrderStatus.SUBMITTING,
+    OrderStatus.UNKNOWN,
+}
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 class CancelOrderBody(BaseModel):
     reason: str = Field(default="user_cancel")
+
+
+class ManualOrderBody(BaseModel):
+    symbol: str
+    market: Market
+    side: OrderSide
+    action: SignalAction = SignalAction.OPEN
+    price_type: PriceType = PriceType.MARKET
+    quantity: str
+    price: str | None = None
+    reason: str = "人工下单"
+
+
+@router.post("/orders")
+def create_manual_order(
+    body: ManualOrderBody,
+    db: Session = Depends(get_db),
+    correlation_id: str = Depends(get_correlation_id),
+):
+    data = manual_order_service.create_order(
+        db,
+        symbol=body.symbol,
+        market=body.market,
+        side=body.side,
+        action=body.action,
+        price_type=body.price_type,
+        quantity=Decimal(body.quantity),
+        price=Decimal(body.price) if body.price is not None else None,
+        reason=body.reason,
+        correlation_id=correlation_id,
+    )
+    return ok(data, correlation_id=correlation_id)
 
 
 @router.get("/orders")
@@ -26,16 +75,31 @@ def list_orders(
     symbol: str | None = None,
     status: str | None = None,
     strategy_id: str | None = None,
+    scope: Literal["active", "attention", "all"] = Query("all"),
+    start: str | None = None,
+    end: str | None = None,
 ):
     offset = (page - 1) * page_size
     mkt = Market(market) if market else None
     st = OrderStatus(status) if status else None
+    statuses = (
+        CANCELLABLE
+        if scope == "active"
+        else ATTENTION_ORDER_STATUSES
+        if scope == "attention"
+        else None
+    )
+    start_dt = _parse_dt(start)
+    end_dt = _parse_dt(end)
     rows, total = order_service.list(
         db,
         market=mkt,
         symbol=symbol,
         status=st,
+        statuses=statuses,
         strategy_id=strategy_id,
+        start=start_dt,
+        end=end_dt,
         offset=offset,
         limit=page_size,
     )
@@ -45,6 +109,14 @@ def list_orders(
             "page": page,
             "page_size": page_size,
             "total": total,
+            "scope": scope,
+            "scope_label": {
+                "active": "仅可撤委托",
+                "attention": "待处理/未知订单",
+                "all": "全部委托",
+            }[scope],
+            "range_start": start_dt.isoformat() if start_dt else None,
+            "range_end": end_dt.isoformat() if end_dt else None,
         },
         correlation_id=correlation_id,
     )

@@ -1,11 +1,13 @@
-import { Button, Input, Modal, Select, Space, Table, Tag, message } from "antd";
+import { Button, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
 import { useOrders } from "../api/hooks";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { ORDER_STATUS_LABEL, orderStatusColor } from "../utils/orderStatus";
+import { orderStatusColor } from "../utils/orderStatus";
+import { formatTime } from "../utils/format";
 import ConfirmDialog from "./ConfirmDialog";
+import EnumLabel from "./EnumLabel";
 
 export type OrderRow = {
   client_order_id: string;
@@ -25,16 +27,17 @@ export type OrderRow = {
 
 type Props = {
   onOpenRisk?: (clientOrderId: string) => void;
+  scope?: "active" | "attention" | "all";
 };
 
-export default function OrderTable({ onOpenRisk }: Props) {
+export default function OrderTable({ onOpenRisk, scope = "active" }: Props) {
   const qc = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<OrderRow | null>(null);
   const [resolvedStatus, setResolvedStatus] = useState("cancelled");
   const [confirmReason, setConfirmReason] = useState("");
   const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
-  const { data, isLoading } = useOrders<OrderRow>(1, 50);
+  const { data, isLoading } = useOrders<OrderRow>(1, 50, 8000, scope);
 
   useWebSocket("order.update", () => {
     qc.invalidateQueries({ queryKey: ["orders"] });
@@ -65,7 +68,7 @@ export default function OrderTable({ onOpenRisk }: Props) {
     },
   });
 
-  const cancellable = new Set(["submitting", "submitted", "partially_filled"]);
+  const cancellable = new Set(["submitted", "partially_filled"]);
 
   const openConfirmUnknown = (row: OrderRow) => {
     setConfirmTarget(row);
@@ -76,6 +79,14 @@ export default function OrderTable({ onOpenRisk }: Props) {
 
   return (
     <>
+    <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+      数据范围：
+      {scope === "active"
+        ? "仅展示可撤单状态（已报、部分成交）"
+        : scope === "attention"
+          ? "待风控、提交中及未知状态订单"
+          : "全部委托"}
+    </Typography.Paragraph>
     <Table
       rowKey="client_order_id"
       size="small"
@@ -85,14 +96,19 @@ export default function OrderTable({ onOpenRisk }: Props) {
       columns={[
         { title: "委托号", dataIndex: "client_order_id", width: 180 },
         { title: "标的", dataIndex: "symbol", width: 110 },
-        { title: "方向", dataIndex: "side", width: 70 },
+        {
+          title: "方向",
+          dataIndex: "side",
+          width: 70,
+          render: (value: string) => <EnumLabel value={value} kind="side" />,
+        },
         {
           title: "状态",
           dataIndex: "status",
           width: 110,
           render: (s: string) => (
             <Tag color={orderStatusColor(s)}>
-              {ORDER_STATUS_LABEL[s] ?? s}
+              <EnumLabel value={s} kind="status" />
               {s === "unknown" ? "（需人工）" : ""}
             </Tag>
           ),
@@ -101,7 +117,12 @@ export default function OrderTable({ onOpenRisk }: Props) {
         { title: "数量", dataIndex: "quantity", width: 80 },
         { title: "成交", dataIndex: "filled_quantity", width: 80 },
         { title: "策略", dataIndex: "strategy_id", width: 100 },
-        { title: "时间", dataIndex: "created_at", width: 170 },
+        {
+          title: "时间",
+          dataIndex: "created_at",
+          width: 170,
+          render: (value: string) => formatTime(value, "MM-DD HH:mm:ss"),
+        },
         {
           title: "操作",
           width: 220,
@@ -170,7 +191,8 @@ export default function OrderTable({ onOpenRisk }: Props) {
           <span>
             将撤销该笔未成交委托：
             <strong>
-              {cancelTarget.symbol} {cancelTarget.side} {cancelTarget.quantity} @ {cancelTarget.price}
+              {cancelTarget.symbol} <EnumLabel value={cancelTarget.side} kind="side" />{" "}
+              {cancelTarget.quantity} @ {cancelTarget.price}
             </strong>
             （{cancelTarget.client_order_id}）
           </span>

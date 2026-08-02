@@ -11,11 +11,13 @@ from app.repositories.account_repo import AccountRepository
 from app.repositories.asset_repo import AssetRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.position_repo import PositionRepository
+from app.repositories.risk_repo import RiskRepository
 from app.repositories.system_event_repo import SystemEventRepository
 from app.schemas.enums import Market, OrderStatus, Severity, SystemStatus
 from app.sdk import manager as sdk_manager
 from app.sdk.models import PositionSnapshot
 from app.services.market_service import STALE_THRESHOLD_SECONDS, market_service
+from app.services.quote_health_service import assess_quote_health
 from app.services.system_service import SystemStateService
 
 logger = logging.getLogger(__name__)
@@ -33,64 +35,71 @@ def _has_unresolved_quote_stale(db: Session) -> bool:
     )
 
 
-def check_quote_stale(db: Session) -> None:
-    """检查已订阅标的行情是否停更，必要时写事件并降级系统状态。"""
+def _resolve_quote_stale_events(db: Session) -> int:
+    return (
+        db.query(SystemEvent)
+        .filter(
+            SystemEvent.event_code == "quote_stale",
+            SystemEvent.resolved.is_(False),
+        )
+        .update({"resolved": True}, synchronize_session=False)
+    )
+
+
+def check_quote_stale(
+    db: Session, *, now: datetime | None = None
+) -> dict:
+    """区分正常休市、行情源断线、订阅断线和交易时段行情停更。"""
     if not market_service.started:
-        return
+        return {"state": "not_monitored", "breaker_required": False, "items": []}
 
     subscribed = market_service.get_subscribed()
     if not subscribed:
-        return
+        return {"state": "not_monitored", "breaker_required": False, "items": []}
 
-    from app.repositories.market_repo import MarketRepository
-
-    repo = MarketRepository(db)
-    now = datetime.now(timezone.utc)
-    stale_items: list[dict] = []
-
-    for market, symbol in subscribed:
-        row = repo.get_latest_quote(market, symbol)
-        if row is None:
-            stale_items.append({"market": market.value, "symbol": symbol, "reason": "no_quote"})
-            continue
-        age = (now - row.quote_time).total_seconds()
-        if age > STALE_THRESHOLD_SECONDS:
-            stale_items.append(
-                {
-                    "market": market.value,
-                    "symbol": symbol,
-                    "quote_time": row.quote_time.isoformat(),
-                    "age_seconds": age,
-                }
-            )
-
-    if not stale_items:
-        return
+    config = RiskRepository(db).config_to_dict()
+    timeout = int(
+        config.get("quote_stale_timeout_seconds", STALE_THRESHOLD_SECONDS)
+        or STALE_THRESHOLD_SECONDS
+    )
+    health = assess_quote_health(db, now=now, timeout_seconds=timeout)
+    if not health["breaker_required"]:
+        if _resolve_quote_stale_events(db):
+            db.commit()
+        return health
 
     state_row = db.get(SystemState, SystemStateService.SINGLETON_ID)
     current_status = state_row.status if state_row else SystemStatus.READY
 
     if current_status == SystemStatus.DEGRADED:
-        return
+        return health
 
     if _has_unresolved_quote_stale(db):
-        return
+        return health
 
     events = SystemEventRepository(db)
     events.add(
         module="market",
         event_code="quote_stale",
-        message=f"行情停更：{len(stale_items)} 个标的超过 {STALE_THRESHOLD_SECONDS}s 未更新",
+        message={
+            "source_disconnected": "行情源连接中断",
+            "subscription_disconnected": "行情订阅未收到有效数据",
+            "feed_stale": f"交易时段行情超过 {timeout}s 未更新",
+        }.get(health["state"], "行情健康检查失败"),
         severity=Severity.WARNING,
-        payload={"stale_items": stale_items},
+        payload=health,
     )
 
     if current_status in {SystemStatus.READY, SystemStatus.TRADING}:
         svc = SystemStateService(db, correlation_id="quote_stale_check")
-        svc.transition(SystemStatus.DEGRADED, reason="行情停更")
-        logger.warning("系统已降级：行情停更 %s", stale_items)
+        svc.transition(
+            SystemStatus.DEGRADED,
+            reason=f"行情异常：{health['state']}",
+        )
+        logger.warning("系统已降级：行情异常 %s", health)
 
     db.commit()
+    return health
 
 
 def sync_positions(db: Session) -> None:
@@ -105,25 +114,47 @@ def sync_positions(db: Session) -> None:
             adapter = sdk_manager.get_adapter_for_market(market)
             positions = adapter.get_positions()
             now = datetime.now(timezone.utc)
-            if not positions:
-                continue
+            previous = position_repo.list_latest(
+                account_id=account.id,
+                market=market,
+                limit=500,
+            )
+            seen: set[tuple[str, str]] = set()
             for pos in positions:
                 snap = pos if isinstance(pos, PositionSnapshot) else pos
-                if snap.account_id != account.id:
-                    snap = PositionSnapshot(
-                        account_id=account.id,
-                        symbol=snap.symbol,
-                        market=snap.market,
-                        direction=snap.direction,
-                        quantity=snap.quantity,
-                        available_quantity=snap.available_quantity,
-                        avg_cost=snap.avg_cost,
-                        market_value=snap.market_value,
-                        pnl=snap.pnl,
-                        snapshot_time=snap.snapshot_time or now,
-                        raw_payload=snap.raw_payload,
-                    )
+                seen.add((snap.symbol, snap.direction))
+                snap = PositionSnapshot(
+                    account_id=account.id,
+                    symbol=snap.symbol,
+                    market=snap.market,
+                    direction=snap.direction,
+                    quantity=snap.quantity,
+                    available_quantity=snap.available_quantity,
+                    avg_cost=snap.avg_cost,
+                    market_value=snap.market_value,
+                    pnl=snap.pnl,
+                    snapshot_time=now,
+                    raw_payload=snap.raw_payload,
+                )
                 position_repo.insert_snapshot(snap)
+            for old in previous:
+                if (old.symbol, old.direction) in seen:
+                    continue
+                position_repo.insert_snapshot(
+                    PositionSnapshot(
+                        account_id=account.id,
+                        symbol=old.symbol,
+                        market=old.market,
+                        direction=old.direction,
+                        quantity=Decimal("0"),
+                        available_quantity=Decimal("0"),
+                        avg_cost=old.avg_cost,
+                        market_value=Decimal("0"),
+                        pnl=Decimal("0"),
+                        snapshot_time=now,
+                        raw_payload={"source": "sync", "closed": True},
+                    )
+                )
         except Exception:
             logger.exception("sync_positions 失败: %s", market.value)
     db.commit()

@@ -127,6 +127,10 @@ class TradingAdapter(ABC):
     @abstractmethod
     def subscribe_quotes(self, symbols: list[str]) -> None: ...
 
+    def unsubscribe_quotes(self, symbols: list[str]) -> None:
+        """取消订阅，默认空实现。子类可重写以释放资源。"""
+        pass
+
     @abstractmethod
     def query_orders(self, filters: OrderQuery | dict | None = None) -> list[OrderSnapshot]: ...
 

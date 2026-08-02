@@ -76,7 +76,7 @@ export default function AiReportViewer({
       ) : loading ? (
         <Typography.Text>加载中…</Typography.Text>
       ) : report ? (
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+        <Space orientation="vertical" style={{ width: "100%" }} size="middle">
           <Row gutter={12}>
             <Col span={6}>
               <Statistic title="总盈亏" value={String(metrics.total_pnl ?? "-")} />

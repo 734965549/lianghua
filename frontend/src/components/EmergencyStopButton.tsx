@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, message } from "antd";
+import { PoweroffOutlined } from "@ant-design/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import ConfirmDialog from "./ConfirmDialog";
@@ -34,8 +35,15 @@ export default function EmergencyStopButton({ size = "middle" }: Props) {
 
   return (
     <>
-      <Button danger type="primary" size={size} onClick={() => setOpen(true)}>
-        一键停止
+      <Button
+        danger
+        type="primary"
+        size={size}
+        icon={<PoweroffOutlined />}
+        className="emergency-stop"
+        onClick={() => setOpen(true)}
+      >
+        紧急停止
       </Button>
       <ConfirmDialog
         open={open}

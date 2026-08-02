@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.models.system_event import SystemEvent
@@ -40,6 +41,7 @@ class SystemEventRepository(BaseRepository[SystemEvent]):
         severity: str | None = None,
         module: str | None = None,
         resolved: bool | None = None,
+        query: str | None = None,
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> tuple[list[SystemEvent], int]:
@@ -50,6 +52,15 @@ class SystemEventRepository(BaseRepository[SystemEvent]):
             q = q.filter(SystemEvent.module == module)
         if resolved is not None:
             q = q.filter(SystemEvent.resolved == resolved)
+        if query:
+            pattern = f"%{query.strip()}%"
+            q = q.filter(
+                or_(
+                    SystemEvent.module.ilike(pattern),
+                    SystemEvent.event_code.ilike(pattern),
+                    SystemEvent.message.ilike(pattern),
+                )
+            )
         if start:
             q = q.filter(SystemEvent.event_time >= start)
         if end:

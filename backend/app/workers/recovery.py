@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.repositories.order_repo import OrderRepository
+from app.repositories.data_sync_log_repo import DataSyncLogRepository
 from app.repositories.risk_repo import RiskRepository
 from app.repositories.strategy_repo import StrategyRunRepository
 from app.repositories.system_event_repo import SystemEventRepository
@@ -62,6 +63,8 @@ def recover_on_startup(db: Session, *, correlation_id: str = "startup") -> dict:
         )
         pending_strategies.append(row.strategy_id)
 
+    orphan_data_tasks = DataSyncLogRepository(db).recover_orphans()
+
     events = SystemEventRepository(db)
     events.add(
         module="system",
@@ -73,6 +76,7 @@ def recover_on_startup(db: Session, *, correlation_id: str = "startup") -> dict:
             "system_status": status["status"],
             "open_orders_queued": len(client_ids),
             "pending_confirm_strategies": pending_strategies,
+            "orphan_data_tasks_recovered": [str(task_id) for task_id in orphan_data_tasks],
             "breaker_preserved": status["status"]
             in {
                 SystemStatus.CIRCUIT_BREAKER.value,
@@ -86,6 +90,7 @@ def recover_on_startup(db: Session, *, correlation_id: str = "startup") -> dict:
         "system_status": status["status"],
         "open_orders_queued": client_ids,
         "pending_confirm_strategies": pending_strategies,
+        "orphan_data_tasks_recovered": [str(task_id) for task_id in orphan_data_tasks],
     }
     logger.info(
         "启动恢复完成 status=%s queued=%d pending_strategies=%s",

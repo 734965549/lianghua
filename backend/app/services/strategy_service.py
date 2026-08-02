@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
+from app.core.time import to_utc_iso
 from app.db import session as db_session
 from app.repositories.market_repo import MarketRepository
 from app.repositories.signal_repo import SignalRepository
@@ -20,6 +21,7 @@ from app.services.audit_service import AuditService
 from app.services.risk_service import RiskService, ZERO_ACCOUNT_ID
 from app.services.system_service import SystemStateService
 from app.strategies.context import StrategyContext
+from app.strategies.factory import StrategyFactory
 from app.strategies.registry import get_strategy_class, import_samples, list_strategies
 
 logger = logging.getLogger(__name__)
@@ -182,14 +184,22 @@ class StrategyService:
                 enabled=True,
                 parameters=defaults if existing is None else None,
                 supported_markets=cls.supported_markets,
+                kind="builtin",
+                status="published",
+                is_editable=False,
             )
 
     def list_strategies(self, db: Session) -> list[dict]:
         self.ensure_definitions(db)
+        from app.services.strategy_builder_service import strategy_builder_service
+
         db_rows = {r.strategy_id: r for r in StrategyRepository(db).list_all()}
         items = []
+        seen: set[str] = set()
+
         for cls in list_strategies():
             row = db_rows.get(cls.strategy_id)
+            seen.add(cls.strategy_id)
             items.append(
                 {
                     "strategy_id": cls.strategy_id,
@@ -199,9 +209,19 @@ class StrategyService:
                     "parameters": row.parameters if row else cls.param_schema().model_dump(mode="json"),
                     "supported_markets": cls.supported_markets,
                     "parameters_schema": cls.param_schema.model_json_schema(),
+                    "kind": "builtin",
+                    "status": row.status if row else "published",
+                    "current_version": row.current_version if row else None,
+                    "editable": False,
+                    "validation_errors": [],
                     "running": cls.strategy_id in self._running,
                 }
             )
+
+        for row in StrategyRepository(db).list_by_kind("rule"):
+            if row.strategy_id in seen:
+                continue
+            items.append(strategy_builder_service._to_dict(db, row, validation_errors=[]))
         return items
 
     def get_strategy(self, db: Session, strategy_id: str) -> dict:
@@ -209,6 +229,9 @@ class StrategyService:
         row = StrategyRepository(db).get_by_strategy_id(strategy_id)
         if row is None:
             raise BizError(ErrorCode.STRATEGY_NOT_FOUND, f"策略不存在: {strategy_id}")
+        if row.kind == "rule":
+            from app.services.strategy_builder_service import strategy_builder_service
+            return strategy_builder_service._to_dict(db, row, validation_errors=[])
         cls = get_strategy_class(strategy_id)
         return {
             "strategy_id": row.strategy_id,
@@ -218,12 +241,25 @@ class StrategyService:
             "parameters": row.parameters,
             "supported_markets": row.supported_markets,
             "parameters_schema": cls.param_schema.model_json_schema(),
+            "kind": "builtin",
+            "status": row.status,
+            "current_version": row.current_version,
+            "editable": False,
+            "validation_errors": [],
             "running": strategy_id in self._running,
         }
 
     def update_parameters(self, db: Session, strategy_id: str, parameters: dict, correlation_id: str = "") -> dict:
         self.ensure_definitions(db)
         repo = StrategyRepository(db)
+        row = repo.get_by_strategy_id(strategy_id)
+        if row is None:
+            raise BizError(ErrorCode.STRATEGY_NOT_FOUND, f"策略不存在: {strategy_id}")
+        if row.kind == "rule":
+            from app.services.strategy_builder_service import strategy_builder_service
+            return strategy_builder_service.update_strategy(
+                db, strategy_id, parameters=parameters, correlation_id=correlation_id
+            )
         cls = get_strategy_class(strategy_id)
         validated = cls.param_schema(**parameters).model_dump(mode="json")
         row = repo.update_parameters(strategy_id, validated)
@@ -246,12 +282,21 @@ class StrategyService:
         *,
         symbols: list[str] | None = None,
         parameters: dict | None = None,
+        strategy_version: int | None = None,
+        run_mode: str = "live",
         confirm: bool = False,
         reason: str = "",
         correlation_id: str = "",
     ) -> dict:
         if not confirm:
             raise BizError(ErrorCode.STRATEGY_CONFIRM_REQUIRED, "启动策略需要 confirm=true")
+
+        normalized_run_mode = (run_mode or "live").strip().lower()
+        if normalized_run_mode not in {"live", "paper"}:
+            raise BizError(
+                ErrorCode.STRATEGY_PARAM_INVALID,
+                f"不支持的 run_mode: {run_mode}，允许 live / paper",
+            )
 
         self._ensure_samples()
         if strategy_id in self._running:
@@ -262,13 +307,31 @@ class StrategyService:
         if row is None or not row.enabled:
             raise BizError(ErrorCode.STRATEGY_NOT_FOUND, f"策略不存在或未启用: {strategy_id}")
 
-        cls = get_strategy_class(strategy_id)
+        StrategyFactory.assert_runnable(db, strategy_id, version=strategy_version)
+
         params = dict(row.parameters)
         if parameters:
             params.update(parameters)
         if symbols:
             params["symbols"] = symbols
-        validated = cls.param_schema(**params).model_dump(mode="json")
+        params["__run_mode__"] = normalized_run_mode
+
+        if row.kind == "rule":
+            run_version = strategy_version or row.current_version
+            instance = StrategyFactory.create(
+                db, strategy_id, params, version=run_version
+            )
+            validated = dict(params)
+            validated["__strategy_version__"] = run_version
+            sym_cfg = instance.definition.get("symbols") or {}
+            if sym_cfg.get("mode") == "fixed" and sym_cfg.get("list"):
+                validated["symbols"] = list(sym_cfg["list"])
+            elif symbols:
+                validated["symbols"] = symbols
+        else:
+            cls = get_strategy_class(strategy_id)
+            validated = cls.param_schema(**params).model_dump(mode="json")
+            instance = cls(validated)
 
         system_status = svc["system"].get_status()["status"]
         if system_status == SystemStatus.READY.value:
@@ -284,8 +347,13 @@ class StrategyService:
             status=StrategyRunStatus.RUNNING,
             parameters=validated,
         )
-        interval = validated.get("interval", "1m")
+        if row.kind == "rule" and isinstance(instance, object) and hasattr(instance, "definition"):
+            interval = instance.definition.get("interval", "1d")
+        else:
+            interval = validated.get("interval", "1m")
         symbol_set = set(validated.get("symbols", []))
+        if not symbol_set and symbols:
+            symbol_set = set(symbols)
 
         def signal_sink(**kwargs):
             self._on_signal(run.id, correlation_id=correlation_id, **kwargs)
@@ -302,7 +370,6 @@ class StrategyService:
             signal_sink=signal_sink,
             logger=strategy_logger,
         )
-        instance = cls(validated)
         instance.on_start(ctx)
 
         builders = {
@@ -325,12 +392,17 @@ class StrategyService:
             object_id=str(run.id),
             result="success",
             reason=reason or f"启动策略 {strategy_id}",
-            request_summary={"strategy_id": strategy_id, "parameters": validated},
+            request_summary={
+                "strategy_id": strategy_id,
+                "parameters": validated,
+                "run_mode": normalized_run_mode,
+            },
         )
         return {
             "run_id": str(run.id),
             "status": "running",
             "strategy_id": strategy_id,
+            "run_mode": normalized_run_mode,
             "started_at": run.started_at.isoformat() if run.started_at else None,
         }
 
@@ -570,7 +642,7 @@ class StrategyService:
                     "price": _decimal_str(sig.price),
                     "quantity": _decimal_str(sig.quantity),
                     "reason": reason,
-                    "signal_time": sig.signal_time.isoformat(),
+                    "signal_time": to_utc_iso(sig.signal_time),
                 },
                 correlation_id=correlation_id,
             )

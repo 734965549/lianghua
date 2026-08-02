@@ -20,6 +20,7 @@ class Strategy(ABC):
 
     strategy_id: str
     name: str
+    version: str = "unversioned"
     description: str = ""
     param_schema: type[StrategyParamSchema] = StrategyParamSchema
     supported_markets: list[str] = ["stock", "futures"]

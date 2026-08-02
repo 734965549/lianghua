@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
+from app.core.time import to_utc_iso
 from app.db.models.order import Order
 from app.db import session as db_session
 from app.repositories.order_repo import OrderRepository
@@ -14,7 +15,7 @@ from app.repositories.risk_repo import RiskRepository
 from app.repositories.trade_repo import TradeRepository
 from app.schemas.enums import OrderStatus
 from app.schemas.error_codes import ErrorCode
-from app.sdk import manager as sdk_manager
+from app.broker import manager as broker_manager
 from app.sdk.base import AdapterError
 from app.sdk.models import CancelOrderRequest, PlaceOrderRequest, TradeUpdateEvent
 from app.services.audit_service import AuditService
@@ -46,8 +47,8 @@ def trade_to_dict(row) -> dict:
         "price": _decimal_str(row.price),
         "quantity": _decimal_str(row.quantity),
         "fee": _decimal_str(row.fee),
-        "trade_time": row.trade_time.isoformat(),
-        "created_at": row.created_at.isoformat(),
+        "trade_time": to_utc_iso(row.trade_time),
+        "created_at": to_utc_iso(row.created_at),
     }
 
 
@@ -106,11 +107,11 @@ class TradeService:
         finally:
             db.close()
 
-        adapter = sdk_manager.get_adapter_for_market(place_req.market)
+        broker = broker_manager.get_broker(place_req.market)
         result = None
         error_msg = ""
         try:
-            result = adapter.place_order(place_req)
+            result = broker.place_order(place_req)
         except AdapterError as exc:
             error_msg = exc.message
             logger.warning("SDK 下单失败: %s %s", place_req.client_order_id, error_msg)
@@ -192,11 +193,11 @@ class TradeService:
         finally:
             db.close()
 
-        adapter = sdk_manager.get_adapter_for_market(cancel_req.market)
+        broker = broker_manager.get_broker(cancel_req.market)
         result = None
         error_msg = ""
         try:
-            result = adapter.cancel_order(cancel_req)
+            result = broker.cancel_order(cancel_req)
         except AdapterError as exc:
             error_msg = exc.message
             logger.warning("SDK 撤单失败: %s %s", client_order_id, error_msg)

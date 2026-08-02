@@ -8,6 +8,8 @@ def test_health_ok(client):
     body = resp.json()
     assert body["success"] is True
     assert body["data"]["api"] == "ok"
+    assert body["data"]["trading_calendar"]["supported"] is True
+    assert body["data"]["trading_calendar"]["weekday_holiday_count"] >= 1
     assert "correlation_id" in body
     assert body["correlation_id"]
 

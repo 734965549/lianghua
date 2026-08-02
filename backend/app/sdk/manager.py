@@ -8,16 +8,41 @@ _futures_adapter: TradingAdapter | None = None
 
 
 def _sdk_config() -> dict:
-    return {
+    config = {
         "mode": settings.sdk_mode,
         "sdk_driver": settings.sdk_driver,
         "quote_provider": settings.quote_provider,
         "akshare_poll_seconds": settings.akshare_poll_seconds,
+        "tdx_endpoint": settings.tdx_endpoint,
+        "tdx_poll_seconds": settings.tdx_poll_seconds,
+        "ifind_username": settings.ifind_username,
+        "ifind_password": settings.ifind_password,
+        "ifind_poll_seconds": settings.ifind_poll_seconds,
         "stock_sdk_path": settings.stock_sdk_path,
         "futures_sdk_path": settings.futures_sdk_path,
         "stock_account": settings.stock_account,
         "futures_account": settings.futures_account,
+        # 专业行情数据源配置
+        "tushare_token": settings.tushare_token,
+        "tushare_poll_seconds": settings.tushare_poll_seconds,
+        "rqdata_username": settings.rqdata_username,
+        "rqdata_password": settings.rqdata_password,
+        "rqdata_poll_seconds": settings.rqdata_poll_seconds,
+        "wind_poll_seconds": settings.wind_poll_seconds,
     }
+    try:
+        from app.db.session import SessionLocal
+        from app.services.settings_service import SettingsService
+
+        db = SessionLocal()
+        try:
+            config.update(SettingsService(db).get_market_data_runtime_config())
+        finally:
+            db.close()
+    except Exception:
+        # 数据库尚未就绪时保留环境变量配置，避免启动阶段循环依赖。
+        pass
+    return config
 
 
 def get_stock_adapter() -> TradingAdapter:

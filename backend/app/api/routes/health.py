@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.api.response import ok
 from app.core.config import settings
+from app.core.trading_calendar import trading_calendar_status
 from app.db.session import check_database
 from app.schemas.enums import SystemStatus
 from app.services.system_service import SystemStateService
@@ -51,6 +52,7 @@ def health(request: Request, db: Session = Depends(get_db)):
             "database": database,
             "stock_sdk": stock_sdk,
             "futures_sdk": futures_sdk,
+            "trading_calendar": trading_calendar_status(),
             "system_status": system_status,
             "version": "0.1.0",
         },

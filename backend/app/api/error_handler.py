@@ -5,6 +5,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.response import BizError, fail
 from app.schemas.error_codes import ErrorCode
+from app.sdk.base import AdapterError
 
 
 def _cid(request: Request) -> str:
@@ -21,6 +22,19 @@ def register_error_handlers(app: FastAPI) -> None:
                 exc.message,
                 retryable=exc.retryable,
                 debug=exc.debug,
+                correlation_id=_cid(request),
+            ).model_dump(),
+        )
+
+    @app.exception_handler(AdapterError)
+    async def adapter_error_handler(request: Request, exc: AdapterError):
+        return JSONResponse(
+            status_code=503,
+            content=fail(
+                exc.code,
+                exc.message,
+                retryable=exc.retryable,
+                debug=exc.raw_message,
                 correlation_id=_cid(request),
             ).model_dump(),
         )

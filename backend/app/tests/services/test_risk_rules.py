@@ -9,6 +9,7 @@ import pytest
 from app.schemas.enums import Market, OrderSide, PriceType, SignalAction
 from app.sdk.models import PlaceOrderRequest
 from app.services.risk_rules import (
+    DataQualityRule,
     DailyLossRule,
     DailyTradeCountRule,
     OrderAmountRule,
@@ -66,6 +67,30 @@ def test_trading_session_rejects_outside():
     result = TradingSessionRule().check(_ctx(risk_config=cfg))
     assert result.result == "rejected"
     assert result.rule_code == "RISK_TRADING_SESSION"
+
+
+@pytest.mark.unit
+def test_data_quality_rule_blocks_live_gate_failure():
+    result = DataQualityRule().check(
+        _ctx(data_quality={"ready": False, "reason": "600000.SH：存在日线缺口"})
+    )
+
+    assert result.result == "rejected"
+    assert result.rule_code == "RISK_DATA_QUALITY"
+
+
+@pytest.mark.unit
+def test_data_quality_rule_allows_risk_reducing_close():
+    request = _ctx().request.model_copy(update={"action": SignalAction.CLOSE})
+
+    result = DataQualityRule().check(
+        _ctx(
+            request=request,
+            data_quality={"ready": False, "reason": "600000.SH：存在日线缺口"},
+        )
+    )
+
+    assert result.result == "passed"
 
 
 @pytest.mark.unit

@@ -40,6 +40,15 @@ def risk_settings(
     return ok(svc.get_settings(), correlation_id=correlation_id)
 
 
+@router.get("/risk/resume-checklist")
+def risk_resume_checklist(
+    db: Session = Depends(get_db),
+    correlation_id: str = Depends(get_correlation_id),
+):
+    svc = RiskService(db, correlation_id=correlation_id)
+    return ok(svc.get_resume_checklist(), correlation_id=correlation_id)
+
+
 @router.put("/risk/settings")
 def update_risk_settings(
     body: RiskSettingsUpdate,

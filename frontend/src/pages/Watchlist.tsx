@@ -15,6 +15,7 @@ import {
 import { PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import type { Instrument, InstrumentCatalog } from "../api/types";
 
 type WatchlistItem = {
   id: string;
@@ -30,12 +31,22 @@ type WatchlistItem = {
 
 export default function Watchlist() {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [form] = Form.useForm();
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ["watchlist"],
     queryFn: () => api.get<WatchlistItem[]>("/watchlist"),
+  });
+
+  const { data: instrumentCatalog, isLoading: instrumentsLoading } = useQuery({
+    queryKey: ["instruments", search],
+    queryFn: () =>
+      api.get<InstrumentCatalog>(
+        `/instruments?query=${encodeURIComponent(search)}&limit=50`,
+      ),
+    enabled: open,
   });
 
   const addMut = useMutation({
@@ -45,6 +56,7 @@ export default function Watchlist() {
       qc.invalidateQueries({ queryKey: ["watchlist"] });
       setOpen(false);
       form.resetFields();
+      setSearch("");
     },
   });
 
@@ -63,10 +75,25 @@ export default function Watchlist() {
     },
   });
 
+  const instrumentOptions = instrumentCatalog?.items.map((item) => ({
+    value: `${item.market}:${item.symbol}`,
+    label: `${item.symbol} - ${item.name}`,
+    instrument: item,
+  })) ?? [];
+
+  const handleInstrumentSelect = (_value: string, option: { instrument: Instrument }) => {
+    const item = option.instrument;
+    form.setFieldsValue({
+      symbol: item.symbol,
+      market: item.market,
+      alias: item.name,
+    });
+  };
+
   return (
     <div>
       <Typography.Title level={3} style={{ marginTop: 0 }}>
-        股票池管理
+        自选标的管理
       </Typography.Title>
       <Typography.Paragraph type="secondary">
         配置关注的标的，启用后将自动订阅实时行情并参与定时数据下载。
@@ -96,6 +123,7 @@ export default function Watchlist() {
             dataIndex: "enabled",
             render: (v: boolean, r: WatchlistItem) => (
               <Switch
+                aria-label={`${r.symbol} 是否启用实时订阅`}
                 checked={v}
                 onChange={(checked) =>
                   patchMut.mutate({ market: r.market, symbol: r.symbol, body: { enabled: checked } })
@@ -108,6 +136,7 @@ export default function Watchlist() {
             dataIndex: "download_1d",
             render: (v: boolean, r: WatchlistItem) => (
               <Switch
+                aria-label={`${r.symbol} 是否下载日线`}
                 checked={v}
                 onChange={(checked) =>
                   patchMut.mutate({ market: r.market, symbol: r.symbol, body: { download_1d: checked } })
@@ -120,6 +149,7 @@ export default function Watchlist() {
             dataIndex: "download_1m",
             render: (v: boolean, r: WatchlistItem) => (
               <Switch
+                aria-label={`${r.symbol} 是否下载分钟线`}
                 checked={v}
                 onChange={(checked) =>
                   patchMut.mutate({ market: r.market, symbol: r.symbol, body: { download_1m: checked } })
@@ -145,29 +175,45 @@ export default function Watchlist() {
       <Modal
         title="添加标的"
         open={open}
-        onCancel={() => setOpen(false)}
+        onCancel={() => {
+          setOpen(false);
+          setSearch("");
+          form.resetFields();
+        }}
         onOk={() => form.submit()}
         confirmLoading={addMut.isPending}
       >
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ market: "stock", enabled: true, download_1d: true, download_1m: false }}
-          onFinish={(values) => addMut.mutate(values)}
+          initialValues={{ enabled: true, download_1d: true, download_1m: false }}
+          onFinish={({ instrument_key: _instrumentKey, ...values }) => addMut.mutate(values)}
         >
-          <Form.Item name="symbol" label="代码" rules={[{ required: true }]}>
-            <Input placeholder="600000.SH 或 IF2509" />
-          </Form.Item>
-          <Form.Item name="market" label="市场" rules={[{ required: true }]}>
+          <Form.Item
+            name="instrument_key"
+            label="选择标的"
+            rules={[{ required: true, message: "请选择标的" }]}
+          >
             <Select
-              options={[
-                { value: "stock", label: "股票" },
-                { value: "futures", label: "期货" },
-              ]}
+              aria-label="选择要添加的标的"
+              showSearch
+              placeholder="输入代码或名称搜索，如 贵州茅台、600519"
+              loading={instrumentsLoading}
+              filterOption={false}
+              options={instrumentOptions}
+              onSearch={setSearch}
+              onSelect={handleInstrumentSelect}
+              notFoundContent={instrumentsLoading ? "加载中..." : "无匹配标的"}
             />
           </Form.Item>
+          <Form.Item name="symbol" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="market" hidden>
+            <Input />
+          </Form.Item>
           <Form.Item name="alias" label="别名">
-            <Input placeholder="可选" />
+            <Input placeholder="可选别名" />
           </Form.Item>
         </Form>
       </Modal>

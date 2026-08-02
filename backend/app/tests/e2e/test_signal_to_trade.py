@@ -126,6 +126,23 @@ async def test_signal_to_trade_flow(db, reset_system_state):
         if order_status in ("filled", "partially_filled"):
             assert len(r.json()["data"]["items"]) > 0
 
+        r = await client.get(
+            f"/api/history/orders/{orders[0]['client_order_id']}/chain"
+        )
+        assert r.status_code == 200
+        chain = r.json()["data"]
+        signal_time = datetime.fromisoformat(chain["signal"]["signal_time"])
+        checked_at = datetime.fromisoformat(chain["risk_checks"][0]["checked_at"])
+        submitted_at = datetime.fromisoformat(chain["order"]["submitted_at"])
+        assert signal_time.tzinfo is not None
+        assert checked_at.tzinfo is not None
+        assert submitted_at.tzinfo is not None
+        assert signal_time < checked_at < submitted_at
+        if chain["trades"]:
+            trade_time = datetime.fromisoformat(chain["trades"][0]["trade_time"])
+            assert trade_time.tzinfo is not None
+            assert submitted_at < trade_time
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
+from app.core.config import settings
+from app.core.time import to_utc_iso
 from app.db.models.account_asset import AccountAsset
 from app.db.models.order import Order
 from app.db.models.trade import Trade
@@ -25,9 +27,12 @@ from app.schemas.error_codes import ErrorCode
 from app.sdk import manager as sdk_manager
 from app.sdk.models import PlaceOrderRequest
 from app.services.audit_service import AuditService
+from app.services.account_snapshot_service import AccountSnapshotService
+from app.services.quote_health_service import assess_quote_health
 from app.services.risk_rules import RULES_ORDERED, RiskContext, RuleResult
 from app.services import runtime_metrics
 from app.services.system_service import SystemStateService
+from app.workers.data_quality import evaluate_data_quality_gate
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +89,7 @@ class RiskService:
                 "system_status": ctx.system_status,
                 "asset": ctx.account_asset,
                 "positions": ctx.positions[:5],
+                "data_quality": ctx.data_quality,
                 "results": [{"rule_code": r.rule_code, "result": r.result, "reason": r.reason} for r in results],
             },
         )
@@ -135,6 +141,18 @@ class RiskService:
         except Exception:
             logger.debug("获取最新行情失败", exc_info=True)
 
+        data_quality = None
+        live_trading = settings.sdk_mode.strip().lower() == "real" or settings.broker_type.strip().lower() in {
+            "qmt",
+            "ptrade",
+        }
+        if live_trading:
+            data_quality = evaluate_data_quality_gate(
+                self.db,
+                targets=[(Market(request.market), request.symbol)],
+                interval="1d",
+            )
+
         window = int(risk_config.get("duplicate_signal_window_seconds", 3))
         strategy_id = request.metadata.get("strategy_id", "")
         side = request.side
@@ -174,6 +192,7 @@ class RiskService:
             recent_signals=recent_signals,
             now=now,
             latest_price=latest_price,
+            data_quality=data_quality,
         )
 
     def _latest_account_asset_dict(self, market: Market | str) -> dict:
@@ -336,7 +355,7 @@ class RiskService:
                 "result": row.result.value,
                 "rule_code": row.rule_code,
                 "reason": row.reason,
-                "checked_at": row.checked_at.isoformat(),
+                "checked_at": to_utc_iso(row.checked_at),
             }
             for row in rows
         ]
@@ -449,28 +468,123 @@ class RiskService:
     def _db_healthy(self) -> bool:
         return check_database() == "connected"
 
-    def _collect_resume_blockers(self) -> list[str]:
-        blockers: list[str] = []
-        status = self.system.get_status()["status"]
-        if status in {SystemStatus.INITIALIZING.value, SystemStatus.OFFLINE.value}:
-            blockers.append(f"系统状态 {status} 不允许恢复")
-        if not self._db_healthy():
-            blockers.append("数据库不可用")
-        if not self._sdk_healthy():
-            blockers.append("SDK 未连接")
-        if self._has_unknown_orders():
-            blockers.append("存在 unknown 状态订单未处理")
+    def get_resume_checklist(self) -> dict:
         config = self.repo.config_to_dict()
-        limit = Decimal(str(config.get("daily_loss_limit", "0") or "0"))
-        if limit > 0 and self._today_loss() >= limit:
-            blockers.append("当日亏损仍超过恢复阈值")
-        fail_limit = int(config.get("consecutive_order_fail_limit", 5) or 5)
-        if fail_limit > 0 and runtime_metrics.get_consecutive_order_fail() >= fail_limit:
-            blockers.append("连续下单失败仍超过恢复阈值")
+        sdk_healthy = self._sdk_healthy()
+        quote_health = assess_quote_health(
+            self.db,
+            timeout_seconds=int(
+                config.get("quote_stale_timeout_seconds", 10) or 10
+            ),
+        )
+        account_snapshot = AccountSnapshotService(self.db).get_snapshot()
+        unknown_count = self.count_unknown_orders()
+        daily_loss_limit = Decimal(
+            str(config.get("daily_loss_limit", "0") or "0")
+        )
+        fail_limit = int(
+            config.get("consecutive_order_fail_limit", 5) or 5
+        )
         trade_limit = int(config.get("daily_trade_count_limit", 0) or 0)
-        if trade_limit > 0 and self._today_trade_count() >= trade_limit:
-            blockers.append("当日交易次数仍超过恢复阈值")
-        return blockers
+        today_loss = self._today_loss()
+        consecutive_failures = runtime_metrics.get_consecutive_order_fail()
+        today_trade_count = self._today_trade_count()
+        checks = [
+            {
+                "code": "database",
+                "label": "数据库连接",
+                "passed": self._db_healthy(),
+                "detail": "数据库可用",
+            },
+            {
+                "code": "channel",
+                "label": "交易通道",
+                "passed": sdk_healthy,
+                "detail": "SDK 已连接" if sdk_healthy else "SDK 未连接",
+            },
+            {
+                "code": "market_data",
+                "label": "行情状态",
+                "passed": quote_health["trade_ready"],
+                "detail": {
+                    "healthy": "交易时段行情有效",
+                    "market_closed": "当前为正常休市",
+                    "not_monitored": "当前无活动行情订阅",
+                    "source_disconnected": "行情源连接中断",
+                    "subscription_disconnected": "行情订阅未收到有效数据",
+                    "feed_stale": "交易时段行情已停更",
+                }.get(quote_health["state"], quote_health["state"]),
+                "data": quote_health,
+            },
+            {
+                "code": "unknown_orders",
+                "label": "未知订单",
+                "passed": unknown_count == 0,
+                "detail": (
+                    "未知订单已清零"
+                    if unknown_count == 0
+                    else f"存在 unknown 状态订单未处理：{unknown_count} 笔"
+                ),
+            },
+            {
+                "code": "account_reconciliation",
+                "label": "账户核对",
+                "passed": bool(account_snapshot["reconciled"]),
+                "detail": (
+                    "无账户资金快照"
+                    if not account_snapshot["has_account_snapshot"]
+                    else f"账户快照 {account_snapshot['snapshot_id']} 已核平"
+                    if account_snapshot["reconciled"]
+                    else (
+                        "账户资金与持仓未核平，差额 "
+                        f"{account_snapshot['market_value_delta']}"
+                    )
+                ),
+                "snapshot_id": account_snapshot["snapshot_id"],
+            },
+            {
+                "code": "daily_loss",
+                "label": "当日亏损",
+                "passed": (
+                    daily_loss_limit <= 0
+                    or today_loss < daily_loss_limit
+                ),
+                "detail": (
+                    f"当日亏损 {today_loss:,.2f} / 限制 {daily_loss_limit:,.2f}"
+                ),
+            },
+            {
+                "code": "order_failures",
+                "label": "连续下单失败",
+                "passed": (
+                    fail_limit <= 0
+                    or consecutive_failures < fail_limit
+                ),
+                "detail": f"连续失败 {consecutive_failures} / 限制 {fail_limit}",
+            },
+            {
+                "code": "trade_count",
+                "label": "当日交易次数",
+                "passed": (
+                    trade_limit <= 0
+                    or today_trade_count < trade_limit
+                ),
+                "detail": f"当日交易 {today_trade_count} / 限制 {trade_limit}",
+            },
+        ]
+        return {
+            "all_passed": all(item["passed"] for item in checks),
+            "checks": checks,
+            "checked_at": to_utc_iso(datetime.now(timezone.utc)),
+        }
+
+    def _collect_resume_blockers(self) -> list[str]:
+        checklist = self.get_resume_checklist()
+        return [
+            item["detail"]
+            for item in checklist["checks"]
+            if not item["passed"]
+        ]
 
     def resume(self, reason: str) -> dict:
         if not (reason or "").strip():
@@ -539,23 +653,13 @@ class RiskService:
         return age >= timeout
 
     def _quotes_stale(self) -> bool:
-        from app.services.market_service import market_service
-
-        if not market_service.started:
-            return False
-        subscribed = market_service.get_subscribed()
-        if not subscribed:
-            return False
         config = self.repo.config_to_dict()
         timeout = int(config.get("quote_stale_timeout_seconds", 10) or 10)
-        now = datetime.now(timezone.utc)
-        for market, symbol in subscribed:
-            row = self.market_repo.get_latest_quote(market, symbol)
-            if row is None:
-                return True
-            if (now - row.quote_time).total_seconds() > timeout:
-                return True
-        return False
+        health = assess_quote_health(
+            self.db,
+            timeout_seconds=timeout,
+        )
+        return bool(health["breaker_required"])
 
     def _consecutive_fail_exceeds(self) -> bool:
         config = self.repo.config_to_dict()

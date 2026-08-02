@@ -109,6 +109,30 @@ def download_history(
     return ok(data_service.download_history(db, limit=limit), correlation_id=correlation_id)
 
 
+@data_router.post("/data/download/{task_id}/cancel")
+def cancel_download(
+    task_id: str,
+    db: Session = Depends(get_db),
+    correlation_id: str = Depends(get_correlation_id),
+):
+    return ok(
+        data_service.cancel_download(db, task_id),
+        correlation_id=correlation_id,
+    )
+
+
+@data_router.post("/data/download/{task_id}/retry")
+def retry_download(
+    task_id: str,
+    db: Session = Depends(get_db),
+    correlation_id: str = Depends(get_correlation_id),
+):
+    return ok(
+        data_service.retry_download(db, task_id),
+        correlation_id=correlation_id,
+    )
+
+
 @data_router.get("/data/integrity")
 def data_integrity(
     db: Session = Depends(get_db),

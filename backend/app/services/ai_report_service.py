@@ -10,6 +10,7 @@ from app.repositories.trade_repo import TradeRepository
 from app.services.ai_client import get_ai_client, resolve_model_name
 from app.services.audit_service import AuditService
 from app.services.metrics_service import MetricsService
+from app.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,9 @@ class AiReportService:
         self.metrics = MetricsService(db)
         self.repo = AiReportRepository(db)
         self.trade_repo = TradeRepository(db)
-        self.ai_client = get_ai_client()
-        self.model_name = resolve_model_name()
+        self.ai_config = SettingsService(db, correlation_id=correlation_id).get_ai_runtime_config()
+        self.ai_client = get_ai_client(self.ai_config)
+        self.model_name = resolve_model_name(self.ai_config)
 
     def generate(
         self,

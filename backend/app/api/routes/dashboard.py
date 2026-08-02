@@ -6,13 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_correlation_id, get_db
 from app.api.response import ok
-from app.repositories.account_repo import AccountRepository
-from app.repositories.asset_repo import AssetRepository
 from app.repositories.order_repo import OrderRepository
-from app.repositories.position_repo import PositionRepository
 from app.repositories.risk_repo import RiskRepository
 from app.repositories.system_event_repo import SystemEventRepository
-from app.schemas.enums import Market
+from app.services.account_snapshot_service import AccountSnapshotService
 from app.services.metrics_service import MetricsService
 from app.services.order_service import order_to_dict
 from app.services.risk_service import RiskService
@@ -45,23 +42,9 @@ def dashboard(
     today_key = start.date().isoformat()
     daily_pnl = daily_pnl_map.get(today_key) or metrics.get("total_pnl") or "0"
 
-    positions = PositionRepository(db).list_latest(limit=200)
-    position_value = sum((Decimal(str(p.market_value or 0)) for p in positions), Decimal("0"))
-
-    available_cash = Decimal("0")
-    asset_repo = AssetRepository(db)
-    account_repo = AccountRepository(db)
-    for market in (Market.STOCK, Market.FUTURES):
-        try:
-            account = account_repo.get_or_create_default(market)
-            row = asset_repo.get_latest(account.id)
-            if row is None:
-                continue
-            available_cash += Decimal(str(row.available_cash or 0))
-            if position_value == 0:
-                position_value += Decimal(str(row.market_value or 0))
-        except Exception:
-            continue
+    account_snapshot = AccountSnapshotService(db).get_snapshot()
+    position_value = Decimal(account_snapshot["market_value"])
+    available_cash = Decimal(account_snapshot["available_cash"])
 
     risk_reject_count = RiskRepository(db).count_rejected(start, now)
     orders, _ = OrderRepository(db).list_orders(offset=0, limit=5)
@@ -87,6 +70,12 @@ def dashboard(
             "daily_pnl": str(daily_pnl),
             "position_value": str(position_value),
             "available_cash": str(available_cash),
+            "total_asset": account_snapshot["total_asset"],
+            "frozen_cash": account_snapshot["frozen_cash"],
+            "other_equity": account_snapshot["other_equity"],
+            "account_snapshot_id": account_snapshot["snapshot_id"],
+            "account_snapshot_time": account_snapshot["snapshot_time"],
+            "account_reconciled": account_snapshot["reconciled"],
             "daily_trade_count": risk_status.get("daily_trade_count", 0),
             "risk_reject_count": risk_reject_count,
             "breaker_active": status["status"] == "circuit_breaker",

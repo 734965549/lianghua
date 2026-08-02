@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
+from app.core.time import to_utc_iso
 from app.db.models.order import Order
 from app.db.models.strategy_signal import StrategySignal
 from app.db import session as db_session
@@ -75,11 +76,11 @@ def order_to_dict(row: Order) -> dict:
         "quantity": _decimal_str(row.quantity),
         "filled_quantity": _decimal_str(row.filled_quantity),
         "status": row.status.value,
-        "submitted_at": row.submitted_at.isoformat() if row.submitted_at else None,
-        "last_event_at": row.last_event_at.isoformat() if row.last_event_at else None,
+        "submitted_at": to_utc_iso(row.submitted_at),
+        "last_event_at": to_utc_iso(row.last_event_at),
         "fail_reason": row.fail_reason,
-        "created_at": row.created_at.isoformat(),
-        "updated_at": row.updated_at.isoformat(),
+        "created_at": to_utc_iso(row.created_at),
+        "updated_at": to_utc_iso(row.updated_at),
     }
 
 
@@ -181,7 +182,10 @@ class OrderService:
         market=None,
         symbol: str | None = None,
         status=None,
+        statuses: set[OrderStatus] | None = None,
         strategy_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[Order], int]:
@@ -189,7 +193,10 @@ class OrderService:
             market=market,
             symbol=symbol,
             status=status,
+            statuses=statuses,
             strategy_id=strategy_id,
+            start=start,
+            end=end,
             offset=offset,
             limit=limit,
         )

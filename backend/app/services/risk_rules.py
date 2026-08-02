@@ -20,6 +20,7 @@ class RiskContext:
     recent_signals: list[dict]
     now: datetime
     latest_price: Decimal | None = None
+    data_quality: dict | None = None
 
 
 @dataclass
@@ -77,6 +78,28 @@ class TradingSessionRule(RiskRule):
         if is_in_session(ctx.now, sessions):
             return RuleResult(self.rule_code, "passed")
         return RuleResult(self.rule_code, "rejected", "当前不在允许交易时段")
+
+
+class DataQualityRule(RiskRule):
+    rule_code = "RISK_DATA_QUALITY"
+
+    def check(self, ctx: RiskContext) -> RuleResult:
+        action = (
+            ctx.request.action.value
+            if hasattr(ctx.request.action, "value")
+            else str(ctx.request.action)
+        )
+        # 数据异常时仍允许平仓，避免硬门禁反而阻止风险敞口收缩。
+        if action != "open":
+            return RuleResult(self.rule_code, "passed")
+        # 模拟交易不设置该字段；真实交易必须由 RiskService 注入硬门禁结果。
+        if ctx.data_quality is None or ctx.data_quality.get("ready"):
+            return RuleResult(self.rule_code, "passed")
+        return RuleResult(
+            self.rule_code,
+            "rejected",
+            f"数据质量未通过实盘准入：{ctx.data_quality.get('reason') or '存在阻断项'}",
+        )
 
 
 class OrderAmountRule(RiskRule):
@@ -214,6 +237,7 @@ RULES_ORDERED = [
     SymbolWhitelistRule,
     SymbolBlacklistRule,
     TradingSessionRule,
+    DataQualityRule,
     OrderAmountRule,
     OrderQuantityRule,
     SymbolPositionRule,

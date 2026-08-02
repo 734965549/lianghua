@@ -4,6 +4,7 @@ from app.db.models.account import Account
 from app.db.models.account_asset import AccountAsset
 from app.db.models.ai_report import AiReport
 from app.db.models.audit_log import AuditLog
+from app.db.models.backtest_run import BacktestRun
 from app.db.models.base import Base
 from app.db.models.instrument import Instrument
 from app.db.models.system_config import SystemConfig
@@ -16,6 +17,7 @@ from app.db.models.risk_config import RiskConfig
 from app.db.models.strategy import Strategy
 from app.db.models.strategy_run import StrategyRun
 from app.db.models.strategy_signal import StrategySignal
+from app.db.models.strategy_version import StrategyVersion
 from app.db.models.system_event import SystemEvent
 from app.db.models.system_state import SystemState
 from app.db.models.data_sync_log import DataSyncLog
@@ -26,6 +28,7 @@ __all__ = [
     "Account",
     "AccountAsset",
     "AiReport",
+    "BacktestRun",
     "Instrument",
     "SystemConfig",
     "SystemState",
@@ -36,6 +39,7 @@ __all__ = [
     "Strategy",
     "StrategyRun",
     "StrategySignal",
+    "StrategyVersion",
     "RiskConfig",
     "RiskCheck",
     "Order",

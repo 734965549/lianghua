@@ -3,9 +3,10 @@ from pydantic import BaseModel, Field
 
 class StrategyStartRequest(BaseModel):
     confirm: bool = False
-    run_mode: str = "live"
+    run_mode: str = Field(default="live", description="运行模式: live | paper")
     symbols: list[str] = Field(default_factory=list)
     parameters: dict | None = None
+    strategy_version: int | None = None
     reason: str = Field(default="", description="启动原因，写入审计日志")
 
 
@@ -16,6 +17,32 @@ class StrategyStopRequest(BaseModel):
 
 class StrategyParametersUpdate(BaseModel):
     parameters: dict
+
+
+class StrategyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str = ""
+    definition: dict | None = None
+    parameters: dict | None = None
+
+
+class StrategyUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = None
+    definition: dict | None = None
+    parameters: dict | None = None
+
+
+class StrategyValidateRequest(BaseModel):
+    definition: dict
+
+
+class StrategyPublishRequest(BaseModel):
+    change_note: str = ""
+
+
+class StrategyCloneRequest(BaseModel):
+    name: str | None = None
 
 
 class RiskSettingsUpdate(BaseModel):

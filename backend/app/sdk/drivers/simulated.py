@@ -75,12 +75,18 @@ class SimulatedThsDriver:
 
     def get_account(self) -> dict:
         self._ensure_connected()
+        market_value = (
+            Decimal("10500.00")
+            if self.market == Market.STOCK
+            else Decimal("700000.00")
+        )
+        total_asset = Decimal("1000000.00")
         return {
             "AcctNo": self.account_no,
-            "TotalAsset": "1000000.00",
-            "AvailCash": "800000.00",
-            "FrozenCash": "50000.00",
-            "MktValue": "150000.00",
+            "TotalAsset": str(total_asset),
+            "AvailCash": str(total_asset - market_value),
+            "FrozenCash": "0.00",
+            "MktValue": str(market_value),
             "Pnl": "0.00",
         }
 

@@ -59,8 +59,8 @@ export default function ConfirmDialog({
       confirmLoading={confirmLoading || submitting}
       onCancel={onCancel}
       onOk={handleOk}
-      destroyOnClose
-      maskClosable={false}
+      destroyOnHidden
+      mask={{ closable: false }}
     >
       <div style={{ marginBottom: 12 }}>{impact}</div>
       <div style={{ marginBottom: 6, fontWeight: 500 }}>操作原因（必填）</div>

@@ -8,11 +8,13 @@ import {
   InputNumber,
   Space,
   Switch,
+  Tag,
   Typography,
   message,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { formatDecimal } from "../utils/format";
 import ConfirmDialog from "../components/ConfirmDialog";
 import EmergencyStopButton from "../components/EmergencyStopButton";
 
@@ -43,6 +45,17 @@ type RiskStatus = {
   daily_trade_count: number;
   consecutive_order_fail: number;
   unknown_order_count: number;
+};
+
+type ResumeChecklist = {
+  all_passed: boolean;
+  checked_at: string;
+  checks: Array<{
+    code: string;
+    label: string;
+    passed: boolean;
+    detail: string;
+  }>;
 };
 
 type PendingAction =
@@ -116,6 +129,7 @@ export default function RiskSettings() {
       message.success("已恢复交易");
       qc.invalidateQueries({ queryKey: ["risk-status"] });
       qc.invalidateQueries({ queryKey: ["system-status"] });
+      qc.invalidateQueries({ queryKey: ["risk-resume-checklist"] });
     },
     onError: (err: { message?: string; debug?: string; code?: string }) => {
       const detail = err?.debug || err?.message || "恢复失败";
@@ -125,6 +139,13 @@ export default function RiskSettings() {
 
   const st = status.data;
   const unknownCount = st?.unknown_order_count ?? 0;
+  const checklist = useQuery({
+    queryKey: ["risk-resume-checklist"],
+    queryFn: () =>
+      api.get<ResumeChecklist>("/risk/resume-checklist"),
+    enabled: Boolean(st?.breaker_active),
+    refetchInterval: st?.breaker_active ? 5000 : false,
+  });
 
   const dialogMeta =
     pending?.type === "save"
@@ -153,8 +174,9 @@ export default function RiskSettings() {
       </Typography.Title>
       <Typography.Paragraph type="secondary">
         当前状态：{st?.system_status ?? "-"}
-        {st?.breaker_active ? " · 熔断/停止中" : ""} · 当日亏损 {st?.daily_loss ?? "-"} /{" "}
-        {st?.daily_loss_limit ?? "-"} · 连续失败 {st?.consecutive_order_fail ?? 0} · 未知订单{" "}
+        {st?.breaker_active ? " · 熔断/停止中" : ""} · 当日亏损{" "}
+        {formatDecimal(st?.daily_loss)} / {formatDecimal(st?.daily_loss_limit)} · 连续失败{" "}
+        {st?.consecutive_order_fail ?? 0} · 未知订单{" "}
         {unknownCount}
       </Typography.Paragraph>
 
@@ -163,8 +185,12 @@ export default function RiskSettings() {
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
-          message={st.system_status === "emergency_stopped" ? "紧急停止中" : "熔断中"}
-          description={st.breaker_reason || st.status_reason || "禁止新委托，需满足前置条件后手动恢复"}
+          title={st.system_status === "emergency_stopped" ? "紧急停止中" : "熔断中"}
+          description={
+            checklist.data?.all_passed
+              ? `历史触发原因：${st.breaker_reason || st.status_reason || "未记录"}。当前恢复检查已全部通过，仍需人工确认后恢复。`
+              : st.breaker_reason || st.status_reason || "禁止新委托，需满足前置条件后手动恢复"
+          }
         />
       ) : null}
 
@@ -173,9 +199,50 @@ export default function RiskSettings() {
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`存在 ${unknownCount} 笔未知状态订单`}
+          title={`存在 ${unknownCount} 笔未知状态订单`}
           description="恢复交易前必须人工确认或处理全部 unknown 订单。"
         />
+      ) : null}
+
+      {st?.breaker_active ? (
+        <Card
+          size="small"
+          title="恢复交易检查清单"
+          style={{ marginBottom: 16 }}
+          extra={
+            <Tag color={checklist.data?.all_passed ? "green" : "red"}>
+              {checklist.data?.all_passed ? "全部通过" : "存在阻断项"}
+            </Tag>
+          }
+          loading={checklist.isLoading}
+        >
+          <div role="list" style={{ display: "grid", gap: 8 }}>
+            {(checklist.data?.checks ?? []).map((item) => (
+              <div
+                key={item.code}
+                role="listitem"
+                style={{
+                  alignItems: "center",
+                  borderBottom: "1px solid #1d2937",
+                  display: "flex",
+                  gap: 16,
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                }}
+              >
+                <div>
+                  <Typography.Text strong>{item.label}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ display: "block" }}>
+                    {item.detail}
+                  </Typography.Text>
+                </div>
+                <Tag color={item.passed ? "green" : "red"}>
+                  {item.passed ? "通过" : "阻断"}
+                </Tag>
+              </div>
+            ))}
+          </div>
+        </Card>
       ) : null}
 
       <Card loading={isLoading} size="small">
@@ -230,7 +297,15 @@ export default function RiskSettings() {
               保存风控参数
             </Button>
             <EmergencyStopButton />
-            <Button onClick={() => setPending({ type: "resume" })}>恢复交易</Button>
+            <Button
+              disabled={
+                Boolean(st?.breaker_active) &&
+                checklist.data?.all_passed === false
+              }
+              onClick={() => setPending({ type: "resume" })}
+            >
+              恢复交易
+            </Button>
           </Space>
         </Form>
       </Card>

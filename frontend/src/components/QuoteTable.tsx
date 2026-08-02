@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Table, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import dayjs from "dayjs";
 import { api } from "../api/client";
-import type { QuoteSnapshot } from "../api/types";
+import type {
+  QuoteHealthReport,
+  QuoteHealthState,
+  QuoteSnapshot,
+} from "../api/types";
 import { useWebSocket } from "../hooks/useWebSocket";
+import EnumLabel from "./EnumLabel";
 import {
   formatChangeColor,
   formatDecimal,
@@ -12,21 +16,38 @@ import {
   formatTime,
 } from "../utils/format";
 
-const STALE_MS = 10_000;
-
 type Props = {
   watchlist?: { market: string; symbol: string }[];
   selected?: QuoteSnapshot | null;
   onSelect?: (quote: QuoteSnapshot) => void;
 };
 
-function isStale(quoteTime: string): boolean {
-  return Date.now() - dayjs(quoteTime).valueOf() > STALE_MS;
-}
+const HEALTH_META: Record<
+  QuoteHealthState,
+  { label: string; color?: string; rowTone?: string }
+> = {
+  healthy: { label: "实时", color: "success" },
+  market_closed: { label: "休市" },
+  feed_stale: {
+    label: "停更",
+    color: "warning",
+    rowTone: "rgba(255,181,71,.035)",
+  },
+  source_disconnected: {
+    label: "行情源断线",
+    color: "error",
+    rowTone: "rgba(255,77,79,.055)",
+  },
+  subscription_disconnected: {
+    label: "订阅断线",
+    color: "error",
+    rowTone: "rgba(255,77,79,.055)",
+  },
+  not_monitored: { label: "待监测" },
+};
 
 export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
   const [quotes, setQuotes] = useState<QuoteSnapshot[]>([]);
-  const [tick, setTick] = useState(0);
 
   const { data, isLoading } = useQuery({
     queryKey: ["quotes", watchlist?.map((w) => `${w.market}:${w.symbol}`).join(",")],
@@ -35,7 +56,10 @@ export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
         const results: QuoteSnapshot[] = [];
         for (const w of watchlist) {
           try {
-            const q = await api.get<QuoteSnapshot>(`/quotes/${w.market}/${w.symbol}`);
+            const q = await api.get<QuoteSnapshot>(
+              `/quotes/${w.market}/${w.symbol}`,
+              { silent: true },
+            );
             results.push(q);
           } catch {
             /* 暂无行情 */
@@ -46,6 +70,26 @@ export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
       return api.get<QuoteSnapshot[]>("/quotes");
     },
     refetchInterval: 15000,
+  });
+
+  const healthTargets = useMemo(
+    () =>
+      (watchlist?.length ? watchlist : quotes)
+        .map((item) => `${item.market}:${item.symbol}`)
+        .join(","),
+    [quotes, watchlist],
+  );
+
+  const healthQuery = useQuery({
+    queryKey: ["quotes", "health", healthTargets],
+    queryFn: () =>
+      api.get<QuoteHealthReport>(
+        `/quotes/health?targets=${encodeURIComponent(healthTargets)}`,
+        { silent: true },
+      ),
+    enabled: Boolean(healthTargets),
+    refetchInterval: 5000,
+    retry: 1,
   });
 
   useEffect(() => {
@@ -63,32 +107,61 @@ export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
     });
   });
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((t) => t + 1), 2000);
-    return () => clearInterval(timer);
-  }, []);
+  const healthByKey = useMemo(
+    () =>
+      new Map(
+        (healthQuery.data?.items ?? []).map((item) => [
+          `${item.market}:${item.symbol}`,
+          item,
+        ]),
+      ),
+    [healthQuery.data],
+  );
 
   const rows = useMemo(
     () =>
-      quotes.map((q) => ({
-        ...q,
-        stale: isStale(q.quote_time),
-      })),
-    // tick 驱动停更着色刷新
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [quotes, tick]
+      quotes.map((quote) => {
+        const health = healthByKey.get(`${quote.market}:${quote.symbol}`);
+        return {
+          ...quote,
+          healthState: (health?.state ?? "not_monitored") as QuoteHealthState,
+          healthReason: health?.reason,
+          ageSeconds: health?.age_seconds,
+        };
+      }),
+    [healthByKey, quotes],
   );
 
-  const staleCount = rows.filter((r) => r.stale).length;
+  const disconnectedCount = rows.filter((row) =>
+    ["source_disconnected", "subscription_disconnected"].includes(row.healthState),
+  ).length;
+  const staleCount = rows.filter((row) => row.healthState === "feed_stale").length;
+  const closedCount = rows.filter((row) => row.healthState === "market_closed").length;
+
+  const healthAlert = healthQuery.isError
+    ? { type: "warning" as const, title: "暂时无法读取后端行情健康状态" }
+    : disconnectedCount > 0
+      ? { type: "error" as const, title: `${disconnectedCount} 个标的行情链路已断开` }
+      : staleCount > 0
+        ? {
+            type: "warning" as const,
+            title: `${staleCount} 个标的在交易时段内行情停更（>${healthQuery.data?.timeout_seconds ?? 10}s）`,
+          }
+        : closedCount > 0
+          ? {
+              type: "info" as const,
+              title: `${closedCount} 个标的当前休市，正在展示最后有效行情`,
+            }
+          : null;
 
   return (
-    <div>
-      {staleCount > 0 && (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {healthAlert && (
         <Alert
-          type="warning"
+          type={healthAlert.type}
           showIcon
-          style={{ marginBottom: 12 }}
-          message={`${staleCount} 个标的行情停更（>${STALE_MS / 1000}s 无更新）`}
+          style={{ marginBottom: 12, flexShrink: 0 }}
+          title={healthAlert.title}
         />
       )}
       <Table
@@ -96,6 +169,8 @@ export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
         rowKey={(r) => `${r.market}:${r.symbol}`}
         loading={isLoading}
         dataSource={rows}
+        style={{ flex: 1, minHeight: 0 }}
+        scroll={{ x: "max-content", y: "100%" }}
         pagination={false}
         onRow={(record) => ({
           onClick: () => onSelect?.(record),
@@ -103,10 +178,8 @@ export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
             cursor: "pointer",
             background:
               selected?.symbol === record.symbol && selected?.market === record.market
-                ? "#e6f4ff"
-                : record.stale
-                  ? "#fffbe6"
-                  : undefined,
+                ? "#1b2a39"
+                : HEALTH_META[record.healthState].rowTone,
           },
         })}
         columns={[
@@ -116,8 +189,12 @@ export default function QuoteTable({ watchlist, selected, onSelect }: Props) {
             render: (v: string, r) => (
               <span>
                 {v}{" "}
-                <Tag>{r.market}</Tag>
-                {r.stale && <Tag color="warning">停更</Tag>}
+                <Tag><EnumLabel value={r.market} kind="market" /></Tag>
+                {r.healthState !== "healthy" && (
+                  <Tag color={HEALTH_META[r.healthState].color}>
+                    {HEALTH_META[r.healthState].label}
+                  </Tag>
+                )}
               </span>
             ),
           },

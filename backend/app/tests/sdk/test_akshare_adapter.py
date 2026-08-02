@@ -2,9 +2,10 @@
 
 import time
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pandas as pd
 import pytest
 
@@ -23,6 +24,14 @@ def _mock_spot_df():
             {"代码": "300750", "最新价": 200.00, "涨跌幅": 3.10, "成交量": 8000000},
         ]
     )
+
+
+def _mock_spot_rows():
+    return [
+        {"f12": "600000", "f14": "浦发银行", "f2": 12.50, "f3": 1.23, "f5": 50000000},
+        {"f12": "000001", "f14": "平安银行", "f2": 15.80, "f3": -0.50, "f5": 30000000},
+        {"f12": "300750", "f14": "宁德时代", "f2": 200.00, "f3": 3.10, "f5": 8000000},
+    ]
 
 
 def _mock_hist_df():
@@ -44,10 +53,17 @@ def adapter():
         mock_ak.stock_zh_a_daily.return_value = _mock_hist_df()
         from app.sdk.akshare_adapter import AkshareAdapter
 
-        a = AkshareAdapter(market=Market.STOCK)
+        a = AkshareAdapter(
+            market=Market.STOCK,
+            config={
+                "akshare_background_sync": False,
+                "akshare_poll_seconds": 0.05,
+                "akshare_retry_backoff": 0,
+            },
+        )
         a.connect()
-        # connect 异步刷新，测试中同步填充缓存
-        a._refresh_spot_snapshot()
+        a._update_spot_batch(_mock_spot_rows())
+        a._spot_sync_done.set()
         yield a
         a.disconnect()
 
@@ -60,6 +76,7 @@ def test_connect(adapter):
     # 连接后缓存应有快照
     assert "600000.SH" in adapter._latest_quotes
     assert adapter._latest_quotes["600000.SH"].last_price == Decimal("12.50")
+    assert adapter._latest_quotes["600000.SH"].change_rate == Decimal("0.0123")
 
 
 @pytest.mark.unit
@@ -77,7 +94,10 @@ def test_connect_disconnect_callbacks():
         mock_ak.stock_zh_a_daily.return_value = _mock_hist_df()
         from app.sdk.akshare_adapter import AkshareAdapter
 
-        a = AkshareAdapter(market=Market.STOCK)
+        a = AkshareAdapter(
+            market=Market.STOCK,
+            config={"akshare_background_sync": False},
+        )
         a.on_connection_change(lambda e: events.append(e))
         a.connect()
         a.disconnect()
@@ -97,9 +117,146 @@ def test_get_quote_returns_cached_snapshot(adapter):
 
 
 @pytest.mark.unit
+def test_list_stock_instruments(adapter):
+    adapter._latest_quotes.clear()
+    adapter._update_spot_batch(
+        [
+            {"code": "600000", "name": "浦发银行", "trade": 12.5},
+            {"code": "430047", "name": "诺思兰德", "trade": 18.8},
+        ]
+    )
+
+    instruments = adapter.list_instruments()
+
+    assert instruments[0]["symbol"] == "600000.SH"
+    assert instruments[1]["symbol"] == "430047.BJ"
+
+
+@pytest.mark.unit
+def test_list_futures_instruments_covers_all_domestic_exchanges():
+    from app.sdk.akshare_adapter import AkshareAdapter
+
+    futures = AkshareAdapter(
+        market=Market.FUTURES,
+        config={"akshare_background_sync": False},
+    )
+
+    instruments = futures.list_instruments()
+
+    symbols = {item["symbol"] for item in instruments}
+    exchanges = {item["exchange"] for item in instruments}
+    assert len(instruments) >= 80
+    assert {"RB0", "CU0", "SC0", "M0", "TA0", "LC0", "IF0"} <= symbols
+    assert {"SHFE", "INE", "DCE", "CZCE", "GFEX", "CFFEX"} <= exchanges
+    futures.disconnect()
+
+
+@pytest.mark.unit
+def test_futures_quote_fetches_requested_contract_and_uses_bare_symbol():
+    from app.sdk.akshare_adapter import AkshareAdapter
+
+    futures = AkshareAdapter(
+        market=Market.FUTURES,
+        config={
+            "akshare_background_sync": False,
+            "akshare_max_retries": 0,
+        },
+    )
+    futures.connect()
+    response = (
+        'var hq_str_nf_RB0="螺纹钢连续,15:00:00,3500,3600,3450,3520,'
+        '3550,3552,3551,3540,3530,20,30,10000,20000";'
+    )
+    with patch.object(futures, "_request_text", return_value=response) as request:
+        quote = futures.get_quote("rb0.SHFE")
+
+    assert quote.symbol == "RB0"
+    assert quote.last_price == Decimal("3551")
+    assert quote.change_rate == pytest.approx(Decimal("0.005949008498583569405099150142"))
+    assert quote.bid_price == Decimal("3550")
+    assert quote.ask_price == Decimal("3552")
+    assert quote.volume == Decimal("20000")
+    assert request.call_args.kwargs["params"]["list"] == "nf_RB0"
+    futures.disconnect()
+
+
+@pytest.mark.unit
+def test_futures_quote_parser_does_not_treat_ta_as_cffex_treasury():
+    from app.sdk.akshare_adapter import AkshareAdapter
+
+    futures = AkshareAdapter(market=Market.FUTURES)
+    response = (
+        'var hq_str_nf_TA0="PTA连续,15:00:00,4800,4900,4750,4810,'
+        '4848,4850,4849,4830,4820,100,120,500000,900000";'
+    )
+
+    quotes = futures._parse_futures_response(response, ["TA0"])
+
+    assert quotes["TA0"].last_price == Decimal("4849")
+    assert quotes["TA0"].volume == Decimal("900000")
+    futures.disconnect()
+
+
+@pytest.mark.unit
+def test_futures_refresh_uses_failure_cooldown():
+    from app.sdk.akshare_adapter import AkshareAdapter
+
+    futures = AkshareAdapter(
+        market=Market.FUTURES,
+        config={"akshare_max_retries": 0},
+    )
+    futures.connect()
+    with patch.object(
+        futures,
+        "_request_text",
+        side_effect=SDKDisconnected("vpn blocked"),
+    ) as request:
+        futures._refresh_futures_snapshot(["RB0"])
+        futures._refresh_futures_snapshot(["RB0"])
+
+    request.assert_called_once()
+    futures.disconnect()
+
+
+@pytest.mark.unit
 def test_get_quote_raises_for_missing_symbol(adapter):
-    with pytest.raises(SDKDisconnected):
-        adapter.get_quote("999999.SZ")
+    with patch.object(
+        adapter,
+        "_fetch_stock_quote",
+        side_effect=SDKDisconnected("missing"),
+    ):
+        with pytest.raises(SDKDisconnected):
+            adapter.get_quote("999999.SZ")
+
+
+@pytest.mark.unit
+def test_get_quote_cache_miss_uses_lightweight_single_stock(adapter):
+    expected = adapter._latest_quotes["600000.SH"].model_copy(
+        update={"symbol": "601398.SH"}
+    )
+    with (
+        patch.object(adapter, "_fetch_stock_quote", return_value=expected) as fetch,
+        patch.object(adapter, "_refresh_spot_snapshot") as full_refresh,
+    ):
+        result = adapter.get_quote("601398.SH")
+
+    assert result == expected
+    fetch.assert_called_once_with("601398.SH")
+    full_refresh.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_quote_does_not_block_during_background_full_sync(adapter):
+    adapter._background_sync_enabled = True
+    adapter._spot_sync_done.clear()
+    adapter._sync_thread = MagicMock()
+    adapter._sync_thread.is_alive.return_value = True
+
+    with patch.object(adapter, "_fetch_stock_quote") as fetch:
+        with pytest.raises(SDKDisconnected, match="全市场行情同步中"):
+            adapter.get_quote("601398.SH")
+
+    fetch.assert_not_called()
 
 
 @pytest.mark.unit
@@ -125,6 +282,42 @@ def test_get_kline_returns_bars(adapter):
     assert bars[0].symbol == "600000.SH"
     assert bars[0].close == Decimal("12.5")
     assert bars[0].bar_time.tzinfo is not None  # 有时区
+
+
+@pytest.mark.unit
+def test_get_minute_kline_prefers_sina_and_converts_exchange_time_to_utc(adapter):
+    from datetime import datetime, timezone
+
+    provider = MagicMock()
+    provider.stock_zh_a_minute.return_value = pd.DataFrame(
+        [
+            {
+                "day": "2026-07-31 14:59:00",
+                "open": 11.61,
+                "high": 11.63,
+                "low": 11.60,
+                "close": 11.63,
+                "volume": 1000,
+            }
+        ]
+    )
+    with patch.object(adapter, "_ak", return_value=provider):
+        bars = adapter.get_kline(
+            "000001.SZ",
+            "1m",
+            datetime(2026, 7, 31, 6, 0, tzinfo=timezone.utc),
+            datetime(2026, 7, 31, 8, 0, tzinfo=timezone.utc),
+        )
+
+    assert len(bars) == 1
+    assert bars[0].bar_time.isoformat() == "2026-07-31T06:59:00+00:00"
+    assert bars[0].close == Decimal("11.63")
+    provider.stock_zh_a_minute.assert_called_once_with(
+        symbol="sz000001",
+        period="1",
+        adjust="qfq",
+    )
+    provider.stock_zh_a_hist_min_em.assert_not_called()
 
 
 @pytest.mark.unit
@@ -411,8 +604,13 @@ def test_normalize_symbol():
     assert AkshareAdapter._normalize_symbol("688001") == "688001.SH"
     assert AkshareAdapter._normalize_symbol("000001") == "000001.SZ"
     assert AkshareAdapter._normalize_symbol("300750") == "300750.SZ"
+    assert AkshareAdapter._normalize_symbol("920000") == "920000.BJ"
+    assert AkshareAdapter._normalize_symbol("bj920006") == "920006.BJ"
+    assert AkshareAdapter._normalize_symbol("BJ920006.SZ") == "920006.BJ"
+    assert AkshareAdapter._normalize_symbol("sh600000") == "600000.SH"
     # 已带后缀
     assert AkshareAdapter._normalize_symbol("600000.SH") == "600000.SH"
+    assert AkshareAdapter._normalize_futures_symbol("rb0.SHFE") == "RB0"
 
 
 @pytest.mark.unit
@@ -429,28 +627,82 @@ def test_safe_decimal():
 
 @pytest.mark.unit
 def test_spot_snapshot_empty_df(adapter):
-    """空 DataFrame 不覆盖缓存。"""
+    """空分页结果不覆盖缓存。"""
     adapter._latest_quotes["test.SH"] = None  # 设一个标记
-    with patch.object(adapter, "_lock", adapter._lock):  # 不 mock 锁
-        pass
-    # 模拟空数据
-    with patch("app.sdk.akshare_adapter.ak") as mock_ak:
-        mock_ak.stock_zh_a_spot.return_value = pd.DataFrame()
+    with patch.object(adapter, "_fetch_spot_page", return_value=([], 1)):
         adapter._refresh_spot_snapshot()
-    # 缓存不变（batch 为空，不 update）
-    # 这里只验证不抛异常
-    assert adapter._connected is True
+    assert "test.SH" in adapter._latest_quotes
 
 
 @pytest.mark.unit
 def test_spot_snapshot_exception_preserves_cache(adapter):
     """源站异常时保留旧缓存。"""
     adapter._latest_quotes["600000.SH"] = None  # 标记
-    with patch("app.sdk.akshare_adapter.ak") as mock_ak:
-        mock_ak.stock_zh_a_spot.side_effect = ConnectionError("timeout")
+    with patch.object(
+        adapter,
+        "_fetch_spot_page",
+        side_effect=ConnectionError("timeout"),
+    ):
         adapter._refresh_spot_snapshot()
-    # 不抛异常，旧缓存保留
-    assert adapter._connected is True
+    assert "600000.SH" in adapter._latest_quotes
+    assert adapter._last_refresh_error == "timeout"
+
+
+@pytest.mark.unit
+def test_spot_snapshot_updates_cache_page_by_page(adapter):
+    page_one = [_mock_spot_rows()[0]]
+    page_two = [_mock_spot_rows()[1]]
+    with patch.object(
+        adapter,
+        "_fetch_spot_page",
+        side_effect=[(page_one, 2), (page_two, 2)],
+    ) as fetch:
+        adapter._refresh_spot_snapshot()
+
+    assert fetch.call_count == 2
+    assert adapter._latest_quotes["600000.SH"].last_price == Decimal("12.50")
+    assert adapter._latest_quotes["000001.SZ"].last_price == Decimal("15.80")
+
+
+@pytest.mark.unit
+def test_spot_batch_ignores_non_stock_codes(adapter):
+    adapter._update_spot_batch(
+        [
+            {"code": "BK1627", "name": "行业板块", "trade": 100},
+            {"code": "sh000001", "name": "上证指数", "trade": 3000},
+            {"code": "920000", "name": "北交所股票", "trade": 14.9},
+        ]
+    )
+
+    assert "BK1627.SZ" not in adapter._latest_quotes
+    assert "sh000001.SZ" not in adapter._latest_quotes
+    assert adapter._latest_quotes["920000.BJ"].last_price == Decimal("14.9")
+
+
+@pytest.mark.unit
+def test_request_json_retries_after_timeout(adapter):
+    request = httpx.Request("GET", "https://example.test/quotes")
+    response = httpx.Response(
+        200,
+        request=request,
+        json={"data": {"ok": True}},
+    )
+    timeout = httpx.ReadTimeout("timeout", request=request)
+    adapter._max_retries = 1
+    adapter._retry_backoff = 0
+
+    with patch.object(
+        adapter._http_client,
+        "get",
+        side_effect=[timeout, response],
+    ) as get:
+        payload = adapter._request_json(
+            "https://example.test/quotes",
+            params={"symbol": "600000"},
+        )
+
+    assert payload["data"]["ok"] is True
+    assert get.call_count == 2
 
 
 @pytest.mark.unit
@@ -483,8 +735,13 @@ def test_simulate_fill_fallback_to_request_price(adapter):
         price=Decimal("8.88"),
         quantity=Decimal("100"),
     )
-    adapter.place_order(req)
-    time.sleep(0.6)
+    with patch.object(
+        adapter,
+        "_fetch_stock_quote",
+        side_effect=SDKDisconnected("missing"),
+    ):
+        adapter.place_order(req)
+        time.sleep(0.6)
 
     trades = adapter.query_trades({"client_order_id": "fallback_test"})
     assert len(trades) >= 1

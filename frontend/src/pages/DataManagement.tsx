@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -17,14 +18,23 @@ import {
   Typography,
   message,
 } from "antd";
-import { DownloadOutlined, DeleteOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  DeleteOutlined,
+  RedoOutlined,
+  StopOutlined,
+} from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { api } from "../api/client";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { formatDecimal, formatTime } from "../utils/format";
 
 type Overview = {
   kline_total: number;
+  kline_trusted: number;
+  kline_quarantined: number;
+  kline_duplicates: number;
   kline_symbols: number;
   snapshot_total: number;
   snapshot_symbols: number;
@@ -35,6 +45,9 @@ type IntegrityItem = {
   symbol: string;
   interval: string;
   count: number;
+  raw_count: number;
+  quarantined_count: number;
+  duplicate_count: number;
   start: string | null;
   end: string | null;
   missing_days: number;
@@ -45,7 +58,26 @@ type DownloadProgress = {
   status: string;
   done: number;
   total: number;
-  items?: Record<string, { status: string; symbol?: string; interval?: string; count?: number; error?: string }>;
+  items?: Record<string, {
+    status: string;
+    symbol?: string;
+    interval?: string;
+    count?: number;
+    received?: number;
+    quarantined?: number;
+    deduplicated?: number;
+    error?: string;
+  }>;
+  error?: string;
+  message?: string;
+};
+
+type KlineRow = Record<string, string> & {
+  source: string;
+  quality_status: "accepted" | "quarantined";
+  quality_reasons: string[];
+  record_role: "primary" | "duplicate" | "quarantined";
+  quarantine_reason?: string | null;
 };
 
 type SyncLog = {
@@ -56,6 +88,9 @@ type SyncLog = {
   start_date: string;
   end_date: string;
   progress: DownloadProgress;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
   created_at: string;
 };
 
@@ -74,7 +109,7 @@ export default function DataManagement() {
   const [browseInterval, setBrowseInterval] = useState("1d");
   const [deleteTarget, setDeleteTarget] = useState<IntegrityItem | null>(null);
 
-  const { data: overview } = useQuery({
+  const { data: overview, isLoading: overviewLoading } = useQuery({
     queryKey: ["data-overview"],
     queryFn: () => api.get<Overview>("/data/overview"),
     refetchInterval: 30000,
@@ -94,7 +129,7 @@ export default function DataManagement() {
   const { data: klines, refetch: refetchKlines } = useQuery({
     queryKey: ["data-klines", browseMarket, browseSymbol, browseInterval],
     queryFn: () =>
-      api.get<Record<string, string>[]>(
+      api.get<KlineRow[]>(
         `/data/klines?market=${browseMarket}&symbol=${browseSymbol}&interval=${browseInterval}&limit=200`
       ),
     enabled: !!browseSymbol,
@@ -111,7 +146,13 @@ export default function DataManagement() {
   });
 
   useWebSocket("data.download.progress", (raw) => {
-    setProgress(raw as DownloadProgress);
+    const next = raw as DownloadProgress;
+    setProgress(next);
+    if (next.status === "done") {
+      void qc.invalidateQueries({ queryKey: ["data-overview"] });
+      void qc.invalidateQueries({ queryKey: ["data-integrity"] });
+      void qc.invalidateQueries({ queryKey: ["data-klines"] });
+    }
   });
 
   const downloadMut = useMutation({
@@ -141,7 +182,26 @@ export default function DataManagement() {
     },
   });
 
+  const cancelMut = useMutation({
+    mutationFn: (taskId: string) => api.post(`/data/download/${taskId}/cancel`),
+    onSuccess: () => {
+      message.info("已请求取消下载任务");
+      void qc.invalidateQueries({ queryKey: ["download-status"] });
+      void qc.invalidateQueries({ queryKey: ["download-history"] });
+    },
+  });
+
+  const retryMut = useMutation({
+    mutationFn: (taskId: string) => api.post(`/data/download/${taskId}/retry`),
+    onSuccess: () => {
+      message.success("重试任务已启动");
+      void qc.invalidateQueries({ queryKey: ["download-status"] });
+      void qc.invalidateQueries({ queryKey: ["download-history"] });
+    },
+  });
+
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  const failedItems = Object.values(progress.items ?? {}).filter((item) => item.error);
 
   const exportCsv = () => {
     if (!klines?.length) {
@@ -170,16 +230,42 @@ export default function DataManagement() {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
-          <Card size="small"><Statistic title="K 线总量" value={overview?.kline_total ?? 0} /></Card>
+          <Card size="small" loading={overviewLoading}><Statistic title="K 线总量" value={overview?.kline_total ?? 0} /></Card>
         </Col>
         <Col xs={12} md={6}>
-          <Card size="small"><Statistic title="K 线标的数" value={overview?.kline_symbols ?? 0} /></Card>
+          <Card size="small" loading={overviewLoading}><Statistic title="K 线标的数" value={overview?.kline_symbols ?? 0} /></Card>
         </Col>
         <Col xs={12} md={6}>
-          <Card size="small"><Statistic title="快照总量" value={overview?.snapshot_total ?? 0} /></Card>
+          <Card size="small" loading={overviewLoading}><Statistic title="快照总量" value={overview?.snapshot_total ?? 0} /></Card>
         </Col>
         <Col xs={12} md={6}>
-          <Card size="small"><Statistic title="快照标的数" value={overview?.snapshot_symbols ?? 0} /></Card>
+          <Card size="small" loading={overviewLoading}><Statistic title="快照标的数" value={overview?.snapshot_symbols ?? 0} /></Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} md={8}>
+          <Card size="small" loading={overviewLoading}>
+            <Statistic title="可信 K 线" value={overview?.kline_trusted ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={12} md={8}>
+          <Card size="small" loading={overviewLoading}>
+            <Statistic
+              title="已隔离异常"
+              value={overview?.kline_quarantined ?? 0}
+              styles={{ content: { color: overview?.kline_quarantined ? "#cf1322" : undefined } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={8}>
+          <Card size="small" loading={overviewLoading}>
+            <Statistic
+              title="重复交易周期"
+              value={overview?.kline_duplicates ?? 0}
+              styles={{ content: { color: overview?.kline_duplicates ? "#d48806" : undefined } }}
+            />
+          </Card>
         </Col>
       </Row>
 
@@ -223,7 +309,13 @@ export default function DataManagement() {
                 <Input placeholder="600000.SH,000001.SZ" />
               </Form.Item>
               <Space>
-                <Button type="primary" htmlType="submit" icon={<DownloadOutlined />} loading={downloadMut.isPending}>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  icon={<DownloadOutlined />}
+                  loading={downloadMut.isPending}
+                  disabled={progress.status === "running" || progress.status === "cancelling"}
+                >
                   开始下载
                 </Button>
                 <Button onClick={() => qualityMut.mutate()} loading={qualityMut.isPending}>
@@ -231,12 +323,58 @@ export default function DataManagement() {
                 </Button>
               </Space>
             </Form>
-            {(progress.status === "running" || progress.status === "done") && (
+            {progress.status !== "idle" && (
               <div style={{ marginTop: 16 }}>
-                <Progress percent={pct} status={progress.status === "done" ? "success" : "active"} />
-                <Typography.Text type="secondary">
-                  {progress.done}/{progress.total} · {progress.status}
-                </Typography.Text>
+                <Progress
+                  percent={pct}
+                  status={
+                    progress.status === "done"
+                      ? "success"
+                      : ["failed", "cancelled"].includes(progress.status)
+                        ? "exception"
+                        : "active"
+                  }
+                />
+                <Space wrap>
+                  <Typography.Text type="secondary">
+                    {progress.done}/{progress.total} · {progress.status}
+                  </Typography.Text>
+                  {progress.task_id &&
+                  (progress.status === "running" || progress.status === "cancelling") ? (
+                    <Button
+                      size="small"
+                      danger
+                      icon={<StopOutlined />}
+                      loading={cancelMut.isPending}
+                      disabled={progress.status === "cancelling"}
+                      onClick={() => cancelMut.mutate(progress.task_id!)}
+                    >
+                      取消
+                    </Button>
+                  ) : null}
+                  {progress.task_id &&
+                  ["failed", "cancelled"].includes(progress.status) ? (
+                    <Button
+                      size="small"
+                      icon={<RedoOutlined />}
+                      loading={retryMut.isPending}
+                      onClick={() => retryMut.mutate(progress.task_id!)}
+                    >
+                      重试
+                    </Button>
+                  ) : null}
+                </Space>
+                {progress.error || failedItems.length ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    style={{ marginTop: 8 }}
+                    title={progress.error || `${failedItems.length} 个下载项失败`}
+                    description={failedItems
+                      .map((item) => `${item.symbol ?? "-"} ${item.interval ?? ""}: ${item.error}`)
+                      .join("；")}
+                  />
+                ) : null}
               </div>
             )}
           </Card>
@@ -252,6 +390,27 @@ export default function DataManagement() {
                 { title: "标的数", render: (_, r) => r.symbols?.length ?? 0 },
                 { title: "周期", render: (_, r) => r.intervals?.join(",") },
                 { title: "时间", dataIndex: "created_at", render: (v) => dayjs(v).format("MM-DD HH:mm") },
+                {
+                  title: "失败原因",
+                  dataIndex: "error_message",
+                  ellipsis: true,
+                  render: (value) => value || "-",
+                },
+                {
+                  title: "操作",
+                  render: (_, row) =>
+                    ["failed", "cancelled"].includes(row.status) ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<RedoOutlined />}
+                        loading={retryMut.isPending}
+                        onClick={() => retryMut.mutate(row.id)}
+                      >
+                        重试
+                      </Button>
+                    ) : null,
+                },
               ]}
             />
           </Card>
@@ -264,10 +423,28 @@ export default function DataManagement() {
               rowKey={(r) => `${r.market}:${r.symbol}:${r.interval}`}
               dataSource={integrity?.items ?? []}
               pagination={{ pageSize: 8 }}
+              scroll={{ x: 760 }}
               columns={[
                 { title: "标的", dataIndex: "symbol" },
                 { title: "周期", dataIndex: "interval" },
                 { title: "条数", dataIndex: "count" },
+                {
+                  title: "原始/可信",
+                  render: (_, r) => `${r.raw_count}/${r.count}`,
+                },
+                {
+                  title: "隔离/重复",
+                  render: (_, r) => (
+                    <Space size={4}>
+                      <Tag color={r.quarantined_count ? "red" : "default"}>
+                        {r.quarantined_count}
+                      </Tag>
+                      <Tag color={r.duplicate_count ? "gold" : "default"}>
+                        {r.duplicate_count}
+                      </Tag>
+                    </Space>
+                  ),
+                },
                 {
                   title: "范围",
                   render: (_, r) =>
@@ -323,12 +500,61 @@ export default function DataManagement() {
               pagination={{ pageSize: 10 }}
               scroll={{ x: 600 }}
               columns={[
-                { title: "时间", dataIndex: "bar_time", width: 180 },
-                { title: "开", dataIndex: "open", align: "right" },
-                { title: "高", dataIndex: "high", align: "right" },
-                { title: "低", dataIndex: "low", align: "right" },
-                { title: "收", dataIndex: "close", align: "right" },
-                { title: "量", dataIndex: "volume", align: "right" },
+                {
+                  title: "时间",
+                  dataIndex: "bar_time",
+                  width: 180,
+                  render: (value) => formatTime(value, "YYYY-MM-DD HH:mm:ss"),
+                },
+                {
+                  title: "来源",
+                  dataIndex: "source",
+                  width: 100,
+                  render: (value) => (
+                    <Tag color={value === "unknown" ? "gold" : "blue"}>{value}</Tag>
+                  ),
+                },
+                {
+                  title: "记录角色",
+                  dataIndex: "record_role",
+                  width: 110,
+                  render: (value, row) => (
+                    <Tag
+                      color={
+                        value === "primary"
+                          ? "green"
+                          : value === "duplicate"
+                            ? "gold"
+                            : "red"
+                      }
+                      title={row.quarantine_reason || undefined}
+                    >
+                      {value === "primary"
+                        ? "主记录"
+                        : value === "duplicate"
+                          ? "重复记录"
+                          : "隔离记录"}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: "质量",
+                  dataIndex: "quality_status",
+                  width: 100,
+                  render: (value, row) => (
+                    <Tag
+                      color={value === "accepted" ? "green" : "red"}
+                      title={row.quality_reasons?.join(", ") || undefined}
+                    >
+                      {value === "accepted" ? "回测可用" : "回测隔离"}
+                    </Tag>
+                  ),
+                },
+                { title: "开", dataIndex: "open", align: "right", render: (v) => formatDecimal(v, 2) },
+                { title: "高", dataIndex: "high", align: "right", render: (v) => formatDecimal(v, 2) },
+                { title: "低", dataIndex: "low", align: "right", render: (v) => formatDecimal(v, 2) },
+                { title: "收", dataIndex: "close", align: "right", render: (v) => formatDecimal(v, 2) },
+                { title: "量", dataIndex: "volume", align: "right", render: (v) => formatDecimal(v, 0) },
               ]}
             />
           </Card>

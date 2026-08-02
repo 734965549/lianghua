@@ -66,6 +66,34 @@ class DataSyncLogRepository(BaseRepository[DataSyncLog]):
         self.db.flush()
         return row
 
+    def mark_cancelled(self, task_id: uuid.UUID, reason: str) -> DataSyncLog | None:
+        row = self.get(task_id)
+        if row is None:
+            return None
+        row.status = "cancelled"
+        row.error_message = reason
+        row.finished_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return row
+
+    def recover_orphans(self, reason: str = "服务重启，未完成任务已恢复为失败") -> list[uuid.UUID]:
+        rows = (
+            self.db.query(DataSyncLog)
+            .filter(DataSyncLog.status.in_(["pending", "running", "cancelling"]))
+            .all()
+        )
+        recovered: list[uuid.UUID] = []
+        for row in rows:
+            row.status = "failed"
+            row.error_message = reason
+            row.finished_at = datetime.now(timezone.utc)
+            progress = dict(row.progress or {})
+            progress.update({"status": "failed", "error": reason})
+            row.progress = progress
+            recovered.append(row.id)
+        self.db.flush()
+        return recovered
+
     def list_recent(self, limit: int = 20) -> list[DataSyncLog]:
         return (
             self.db.query(DataSyncLog)

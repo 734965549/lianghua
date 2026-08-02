@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -6,11 +7,21 @@ from sqlalchemy.orm import Session
 
 from app.api.response import BizError
 from app.api.ws_hub import broadcast_sync
+from app.broker import manager as broker_manager
+from app.core.time import to_utc_iso
 from app.db.session import SessionLocal
 from app.repositories.market_repo import MarketRepository
-from app.schemas.enums import Market
+from app.repositories.system_event_repo import SystemEventRepository
+from app.schemas.enums import Market, Severity
 from app.sdk import manager as sdk_manager
 from app.sdk.models import KlineBar, QuoteSnapshot
+from app.sdk.normalization import is_plausible_change_rate, max_abs_change_rate
+from app.services.kline_quality import (
+    kline_source,
+    quality_metadata,
+    source_is_simulated,
+    stamp_kline_source,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +41,53 @@ def _decimal_str(value: Decimal | float | None) -> str | None:
     return str(Decimal(str(value)))
 
 
-def quote_to_dict(quote: QuoteSnapshot | object) -> dict:
+def quote_validation_error(quote: QuoteSnapshot) -> str | None:
+    """返回行情隔离原因；None 表示可进入策略、风控和交易链路。"""
+    if not quote.symbol.strip():
+        return "标的代码为空"
+    if not quote.last_price.is_finite() or quote.last_price <= 0:
+        return "最新价必须为有限正数"
+    if not quote.change_rate.is_finite():
+        return "涨跌幅不是有限数值"
+    max_rate = max_abs_change_rate(quote.market, quote.symbol)
+    if not is_plausible_change_rate(
+        quote.market, quote.symbol, quote.change_rate
+    ):
+        return f"涨跌幅 {quote.change_rate} 超出 {quote.market.value} 市场范围 ±{max_rate}"
+    if not quote.volume.is_finite() or quote.volume < 0:
+        return "成交量必须为有限非负数"
+    if quote.quote_time.tzinfo is None or quote.quote_time.utcoffset() is None:
+        return "行情时间缺少时区"
+    if quote.bid_price is not None and (
+        not quote.bid_price.is_finite() or quote.bid_price < 0
+    ):
+        return "买一价必须为有限非负数"
+    if quote.ask_price is not None and (
+        not quote.ask_price.is_finite() or quote.ask_price < 0
+    ):
+        return "卖一价必须为有限非负数"
+    if (
+        quote.bid_price is not None
+        and quote.ask_price is not None
+        and quote.bid_price > 0
+        and quote.ask_price > 0
+        and quote.bid_price > quote.ask_price
+    ):
+        return "买一价高于卖一价"
+    return None
+
+
+def quote_to_dict(
+    quote: QuoteSnapshot | object, *, fallback_source: str | None = None
+) -> dict:
     """将 QuoteSnapshot 或 ORM 行序列化为 API 响应。"""
+    raw_payload = quote.raw_payload if isinstance(quote.raw_payload, dict) else {}
+    source = str(
+        raw_payload.get("provider")
+        or raw_payload.get("source")
+        or fallback_source
+        or "unknown"
+    ).lower()
     if isinstance(quote, QuoteSnapshot):
         return {
             "symbol": quote.symbol,
@@ -41,7 +97,9 @@ def quote_to_dict(quote: QuoteSnapshot | object) -> dict:
             "volume": _decimal_str(quote.volume),
             "bid_price": _decimal_str(quote.bid_price),
             "ask_price": _decimal_str(quote.ask_price),
-            "quote_time": quote.quote_time.isoformat(),
+            "quote_time": to_utc_iso(quote.quote_time),
+            "source": source,
+            "simulated": source_is_simulated(source, raw_payload),
         }
     return {
         "symbol": quote.symbol,
@@ -51,33 +109,38 @@ def quote_to_dict(quote: QuoteSnapshot | object) -> dict:
         "volume": _decimal_str(quote.volume),
         "bid_price": _decimal_str(quote.bid_price),
         "ask_price": _decimal_str(quote.ask_price),
-        "quote_time": quote.quote_time.isoformat(),
+        "quote_time": to_utc_iso(quote.quote_time),
+        "source": source,
+        "simulated": source_is_simulated(source, raw_payload),
     }
 
 
 def kline_to_dict(bar: KlineBar | object) -> dict:
+    quality = quality_metadata(bar)
     if isinstance(bar, KlineBar):
         return {
             "symbol": bar.symbol,
             "market": bar.market.value if isinstance(bar.market, Market) else bar.market,
             "interval": bar.interval,
-            "bar_time": bar.bar_time.isoformat(),
+            "bar_time": to_utc_iso(bar.bar_time),
             "open": _decimal_str(bar.open),
             "high": _decimal_str(bar.high),
             "low": _decimal_str(bar.low),
             "close": _decimal_str(bar.close),
             "volume": _decimal_str(bar.volume),
+            **quality,
         }
     return {
         "symbol": bar.symbol,
         "market": bar.market.value if isinstance(bar.market, Market) else bar.market,
         "interval": bar.interval,
-        "bar_time": bar.bar_time.isoformat(),
+        "bar_time": to_utc_iso(bar.bar_time),
         "open": _decimal_str(bar.open),
         "high": _decimal_str(bar.high),
         "low": _decimal_str(bar.low),
         "close": _decimal_str(bar.close),
         "volume": _decimal_str(bar.volume),
+        **quality,
     }
 
 
@@ -88,6 +151,7 @@ class MarketService:
             Market.FUTURES: set(),
         }
         self._started = False
+        self._reconfigure_lock = threading.Lock()
 
     @property
     def started(self) -> bool:
@@ -102,9 +166,11 @@ class MarketService:
         from app.services.order_service import order_service
         from app.services.trade_service import trade_service
 
-        for adapter in (sdk_manager.get_stock_adapter(), sdk_manager.get_futures_adapter()):
-            adapter.on_order_update(order_service.on_order_update)
-            adapter.on_trade_update(trade_service.on_trade_update)
+        # 通过 Broker 抽象层注册订单/成交回调，避免与 AdapterBroker 互相覆盖
+        for market in (Market.STOCK, Market.FUTURES):
+            broker = broker_manager.get_broker(market)
+            broker.on_order_update(order_service.on_order_update)
+            broker.on_trade_update(trade_service.on_trade_update)
 
         db = SessionLocal()
         try:
@@ -135,9 +201,56 @@ class MarketService:
             logger.debug("停止 futures adapter 异常", exc_info=True)
         self._started = False
 
+    def reconfigure(self) -> None:
+        """应用最新行情源配置并恢复当前订阅，无需重启整个后端。"""
+        with self._reconfigure_lock:
+            previous_subscriptions = {
+                market: set(symbols) for market, symbols in self._subscribed.items()
+            }
+            self.stop()
+            sdk_manager.reset_adapters()
+            broker_manager.reset_brokers()
+            self._subscribed = {
+                Market.STOCK: set(),
+                Market.FUTURES: set(),
+            }
+            try:
+                self.start()
+                for market, symbols in previous_subscriptions.items():
+                    if symbols:
+                        self.subscribe(sorted(symbols), market)
+            except Exception:
+                self._started = False
+                logger.exception("行情源热切换失败")
+                raise
+
     def _handle_quote(self, quote: QuoteSnapshot) -> None:
         db = SessionLocal()
         try:
+            raw_payload = dict(quote.raw_payload or {})
+            raw_payload.setdefault("provider", self._source_name(quote.market))
+            quote = quote.model_copy(update={"raw_payload": raw_payload})
+            validation_error = quote_validation_error(quote)
+            if validation_error:
+                payload = quote_to_dict(quote)
+                payload["reason"] = validation_error
+                payload["source"] = (
+                    quote.raw_payload.get("provider")
+                    if isinstance(quote.raw_payload, dict)
+                    else None
+                )
+                SystemEventRepository(db).add(
+                    module="market_data",
+                    event_code="QUOTE_QUARANTINED",
+                    message=f"{quote.symbol} 行情已隔离：{validation_error}",
+                    severity=Severity.ERROR,
+                    payload=payload,
+                )
+                db.commit()
+                broadcast_sync("quote.quarantined", payload)
+                logger.warning("隔离异常行情 %s: %s", quote.symbol, validation_error)
+                return
+
             repo = MarketRepository(db)
             repo.insert_snapshot(quote)
             db.commit()
@@ -162,6 +275,14 @@ class MarketService:
             adapter.connect()
         adapter.subscribe_quotes(symbols)
         self._subscribed[market].update(symbols)
+        return symbols
+
+    def unsubscribe(self, symbols: list[str], market: Market | str) -> list[str]:
+        if isinstance(market, str):
+            market = Market(market)
+        adapter = sdk_manager.get_adapter_for_market(market)
+        adapter.unsubscribe_quotes(symbols)
+        self._subscribed[market].difference_update(symbols)
         return symbols
 
     def get_subscribed(self) -> list[tuple[Market, str]]:
@@ -195,7 +316,10 @@ class MarketService:
             market = Market(market)
         repo = MarketRepository(db)
         rows = repo.list_latest_quotes(market=market, symbols=symbols)
-        return [quote_to_dict(r) for r in rows]
+        return [
+            quote_to_dict(r, fallback_source=self._source_name(r.market))
+            for r in rows
+        ]
 
     def get_quote(self, db: Session, market: Market | str, symbol: str) -> dict:
         if isinstance(market, str):
@@ -203,9 +327,12 @@ class MarketService:
         repo = MarketRepository(db)
         row = repo.get_latest_quote(market, symbol)
         if row:
-            return quote_to_dict(row)
+            return quote_to_dict(row, fallback_source=self._source_name(market))
         adapter = sdk_manager.get_adapter_for_market(market)
         snap = adapter.get_quote(symbol)
+        raw_payload = dict(snap.raw_payload or {})
+        raw_payload.setdefault("provider", self._source_name(market))
+        snap = snap.model_copy(update={"raw_payload": raw_payload})
         repo.insert_snapshot(snap)
         db.commit()
         return quote_to_dict(snap)
@@ -220,10 +347,13 @@ class MarketService:
         start: datetime | None = None,
         end: datetime | None = None,
         limit: int = 500,
+        trusted_only: bool = True,
     ) -> list[dict]:
         if isinstance(market, str):
             market = Market(market)
         limit = min(max(limit, 1), 2000)
+        adapter = sdk_manager.get_adapter_for_market(market)
+        active_source = self._source_name(market)
         repo = MarketRepository(db)
         rows = repo.query_klines(
             market=market,
@@ -232,22 +362,26 @@ class MarketService:
             start=start,
             end=end,
             limit=limit,
+            trusted_only=trusted_only,
+            expected_source=active_source,
         )
         if len(rows) >= limit:
             return [kline_to_dict(r) for r in reversed(rows)]
 
         now = datetime.now(timezone.utc)
         fetch_end = end or now
-        step_map = {
-            "1m": timedelta(minutes=1),
-            "5m": timedelta(minutes=5),
-            "1d": timedelta(days=1),
-        }
-        step = step_map.get(interval, timedelta(minutes=1))
-        fetch_start = start or (fetch_end - step * limit)
+        if start is not None:
+            fetch_start = start
+        elif interval in {"1m", "5m"}:
+            # 休市后仍需取得最后一个交易时段，不能只请求“当前时间往前 N 分钟”。
+            fetch_start = fetch_end - timedelta(days=7)
+        else:
+            fetch_start = fetch_end - timedelta(days=max(limit * 2, 30))
 
-        adapter = sdk_manager.get_adapter_for_market(market)
-        bars = adapter.get_kline(symbol, interval, fetch_start, fetch_end)
+        bars = stamp_kline_source(
+            adapter.get_kline(symbol, interval, fetch_start, fetch_end),
+            active_source,
+        )
         if bars:
             if len(bars) > limit:
                 bars = bars[-limit:]
@@ -260,8 +394,15 @@ class MarketService:
                 start=start,
                 end=end,
                 limit=limit,
+                trusted_only=trusted_only,
+                expected_source=active_source,
             )
         return [kline_to_dict(r) for r in reversed(rows)]
+
+    @staticmethod
+    def _source_name(market: Market) -> str:
+        adapter = sdk_manager.get_adapter_for_market(market)
+        return str(getattr(adapter, "name", adapter.__class__.__name__)).lower()
 
 
 market_service = MarketService()

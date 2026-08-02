@@ -24,6 +24,8 @@ def list_audit_logs(
     module: str | None = None,
     action: str | None = None,
     object_type: str | None = None,
+    result: str | None = None,
+    query: str | None = None,
     start: str | None = None,
     end: str | None = None,
     page: int = Query(1, ge=1),
@@ -36,6 +38,8 @@ def list_audit_logs(
         module=module,
         action=action,
         object_type=object_type,
+        result=result,
+        query=query,
         start=_parse_dt(start),
         end=_parse_dt(end),
     )
@@ -72,6 +76,7 @@ def list_system_events(
     severity: str | None = None,
     module: str | None = None,
     resolved: bool | None = None,
+    query: str | None = None,
     start: str | None = None,
     end: str | None = None,
     page: int = Query(1, ge=1),
@@ -84,6 +89,7 @@ def list_system_events(
         severity=severity,
         module=module,
         resolved=resolved,
+        query=query,
         start=_parse_dt(start),
         end=_parse_dt(end),
     )

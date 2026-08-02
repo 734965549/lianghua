@@ -70,3 +70,23 @@ class StrategyRunStatus(str, enum.Enum):
 class AccountStatus(str, enum.Enum):
     ACTIVE = "active"
     DISABLED = "disabled"
+
+
+class BacktestStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class Granularity(str, enum.Enum):
+    KLINE = "kline"
+    SIMULATED_TICK = "simulated_tick"
+    TICK = "tick"
+
+
+class FillModel(str, enum.Enum):
+    NEXT_OPEN = "next_open"
+    NEXT_CLOSE = "next_close"
+    VWAP = "vwap"
+    TICK_PRICE = "tick_price"

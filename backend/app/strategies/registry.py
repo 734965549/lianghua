@@ -20,4 +20,6 @@ def list_strategies() -> list[type[Strategy]]:
 
 def import_samples() -> None:
     """导入示例策略以完成注册。"""
+    from app.strategies.samples import grid_trading  # noqa: F401
     from app.strategies.samples import ma_cross  # noqa: F401
+    from app.strategies.samples import multi_factor  # noqa: F401

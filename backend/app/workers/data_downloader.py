@@ -14,13 +14,25 @@ from app.api.ws_hub import broadcast_sync
 from app.db.session import SessionLocal
 from app.repositories.data_sync_log_repo import DataSyncLogRepository
 from app.repositories.market_repo import MarketRepository
-from app.schemas.enums import Market
+from app.repositories.system_event_repo import SystemEventRepository
+from app.schemas.enums import Market, Severity
 from app.sdk import manager as sdk_manager
+from app.services.kline_quality import stamp_kline_source
 
 logger = logging.getLogger(__name__)
 
 RATE_LIMIT_SECONDS = 2.5
 MAX_RETRIES = 3
+ITEM_TIMEOUT_SECONDS = 90
+TASK_TIMEOUT_SECONDS = 30 * 60
+
+
+class DownloadCancelled(RuntimeError):
+    pass
+
+
+class DownloadTimedOut(RuntimeError):
+    pass
 
 
 class DataDownloader:
@@ -29,6 +41,9 @@ class DataDownloader:
         self._running = False
         self._current_task_id: uuid.UUID | None = None
         self._progress: dict = {}
+        self._cancel_event = threading.Event()
+        self._started_monotonic: float | None = None
+        self._thread: threading.Thread | None = None
 
     @property
     def is_running(self) -> bool:
@@ -41,6 +56,20 @@ class DataDownloader:
     def get_progress(self) -> dict:
         with self._lock:
             return dict(self._progress)
+
+    def cancel(self, task_id: str | None = None) -> bool:
+        with self._lock:
+            if not self._running or self._current_task_id is None:
+                return False
+            if task_id and str(self._current_task_id) != task_id:
+                return False
+            self._cancel_event.set()
+            self._progress = {
+                **self._progress,
+                "status": "cancelling",
+                "message": "已请求取消，等待当前数据源调用结束",
+            }
+            return True
 
     def start_download(
         self,
@@ -55,6 +84,8 @@ class DataDownloader:
             if self._running:
                 raise RuntimeError("已有下载任务正在运行")
             self._running = True
+            self._cancel_event.clear()
+            self._started_monotonic = time.monotonic()
 
         db = SessionLocal()
         try:
@@ -81,6 +112,7 @@ class DataDownloader:
             args=(task_id, symbols, intervals, start_date, end_date),
             daemon=True,
         )
+        self._thread = thread
         thread.start()
         return str(task_id)
 
@@ -107,20 +139,46 @@ class DataDownloader:
 
             for market, symbol in symbols:
                 for interval in intervals:
+                    self._raise_if_stopped()
                     key = f"{symbol}:{interval}"
                     items[key] = {"status": "downloading", "symbol": symbol, "interval": interval}
                     self._update_progress(db, log_repo, task_id, done, total, items)
 
                     try:
                         bars = self._fetch_with_retry(market, symbol, interval, start_dt, end_dt)
+                        self._raise_if_stopped()
+                        outcome = {
+                            "received": 0,
+                            "accepted": 0,
+                            "quarantined": 0,
+                            "deduplicated": 0,
+                            "quarantine_reasons": [],
+                        }
                         if bars:
-                            market_repo.upsert_klines(bars)
+                            outcome = market_repo.upsert_klines(bars)
+                            if outcome["quarantined"]:
+                                SystemEventRepository(db).add(
+                                    module="data_quality",
+                                    event_code="KLINE_QUARANTINED",
+                                    message=(
+                                        f"{symbol} {interval}: "
+                                        f"{outcome['quarantined']} bars quarantined"
+                                    ),
+                                    severity=Severity.ERROR,
+                                    payload={
+                                        "task_id": str(task_id),
+                                        **outcome,
+                                    },
+                                )
                             db.commit()
                         items[key] = {
                             "status": "done",
                             "symbol": symbol,
                             "interval": interval,
-                            "count": len(bars),
+                            "count": outcome["accepted"],
+                            "received": outcome["received"],
+                            "quarantined": outcome["quarantined"],
+                            "deduplicated": outcome["deduplicated"],
                         }
                     except Exception as exc:
                         logger.exception("下载失败 %s %s", symbol, interval)
@@ -133,13 +191,34 @@ class DataDownloader:
 
                     done += 1
                     self._update_progress(db, log_repo, task_id, done, total, items)
-                    time.sleep(RATE_LIMIT_SECONDS)
+                    if self._cancel_event.wait(RATE_LIMIT_SECONDS):
+                        raise DownloadCancelled("用户取消了下载任务")
 
             log_repo.mark_done(task_id)
             db.commit()
             with self._lock:
                 self._progress["status"] = "done"
                 self._progress["done"] = done
+        except DownloadCancelled as exc:
+            db.rollback()
+            log_repo.mark_cancelled(task_id, str(exc))
+            db.commit()
+            with self._lock:
+                self._progress = {
+                    **self._progress,
+                    "status": "cancelled",
+                    "error": str(exc),
+                }
+        except DownloadTimedOut as exc:
+            db.rollback()
+            log_repo.mark_failed(task_id, str(exc))
+            db.commit()
+            with self._lock:
+                self._progress = {
+                    **self._progress,
+                    "status": "failed",
+                    "error": str(exc),
+                }
         except Exception as exc:
             logger.exception("批量下载任务失败")
             db.rollback()
@@ -152,6 +231,8 @@ class DataDownloader:
             with self._lock:
                 self._running = False
                 self._current_task_id = None
+                self._started_monotonic = None
+                self._thread = None
             db.close()
             broadcast_sync("data.download.progress", self.get_progress())
 
@@ -164,7 +245,13 @@ class DataDownloader:
         total: int,
         items: dict,
     ) -> None:
-        progress = {"done": done, "total": total, "items": items, "status": "running"}
+        progress = {
+            "done": done,
+            "total": total,
+            "items": items,
+            "status": "running",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
         with self._lock:
             self._progress = {"task_id": str(task_id), **progress}
         log_repo.update_progress(task_id, progress)
@@ -182,16 +269,56 @@ class DataDownloader:
         adapter = sdk_manager.get_adapter_for_market(market)
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
+            self._raise_if_stopped()
             try:
-                return adapter.get_kline(symbol, interval, start, end)
+                bars = self._call_with_timeout(
+                    lambda: adapter.get_kline(symbol, interval, start, end),
+                    ITEM_TIMEOUT_SECONDS,
+                )
+                source = str(
+                    getattr(adapter, "name", adapter.__class__.__name__)
+                ).lower()
+                return stamp_kline_source(bars, source)
             except Exception as exc:
                 last_exc = exc
                 wait = (2**attempt) * RATE_LIMIT_SECONDS
                 logger.warning("重试 %s %s (%d/%d): %s", symbol, interval, attempt + 1, MAX_RETRIES, exc)
-                time.sleep(wait)
+                if self._cancel_event.wait(wait):
+                    raise DownloadCancelled("用户取消了下载任务") from exc
         if last_exc:
             raise last_exc
         return []
+
+    def _raise_if_stopped(self) -> None:
+        if self._cancel_event.is_set():
+            raise DownloadCancelled("用户取消了下载任务")
+        if (
+            self._started_monotonic is not None
+            and time.monotonic() - self._started_monotonic > TASK_TIMEOUT_SECONDS
+        ):
+            raise DownloadTimedOut(
+                f"下载任务超过 {TASK_TIMEOUT_SECONDS // 60} 分钟，已自动终止"
+            )
+
+    @staticmethod
+    def _call_with_timeout(call, timeout_seconds: int):
+        result: list = []
+        error: list[BaseException] = []
+
+        def invoke() -> None:
+            try:
+                result.append(call())
+            except BaseException as exc:  # 在线程边界保留原始异常
+                error.append(exc)
+
+        worker = threading.Thread(target=invoke, daemon=True)
+        worker.start()
+        worker.join(timeout_seconds)
+        if worker.is_alive():
+            raise TimeoutError(f"单个数据源调用超过 {timeout_seconds} 秒")
+        if error:
+            raise error[0]
+        return result[0] if result else []
 
     @staticmethod
     def _parse_date(s: str) -> datetime:

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.models.audit_log import AuditLog
@@ -45,6 +46,8 @@ class AuditRepository(BaseRepository[AuditLog]):
         module: str | None = None,
         action: str | None = None,
         object_type: str | None = None,
+        result: str | None = None,
+        query: str | None = None,
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> tuple[list[AuditLog], int]:
@@ -55,6 +58,20 @@ class AuditRepository(BaseRepository[AuditLog]):
             q = q.filter(AuditLog.action == action)
         if object_type:
             q = q.filter(AuditLog.object_type == object_type)
+        if result:
+            q = q.filter(AuditLog.result == result)
+        if query:
+            pattern = f"%{query.strip()}%"
+            q = q.filter(
+                or_(
+                    AuditLog.action.ilike(pattern),
+                    AuditLog.module.ilike(pattern),
+                    AuditLog.object_type.ilike(pattern),
+                    AuditLog.object_id.ilike(pattern),
+                    AuditLog.reason.ilike(pattern),
+                    AuditLog.correlation_id.ilike(pattern),
+                )
+            )
         if start:
             q = q.filter(AuditLog.event_time >= start)
         if end:

@@ -8,6 +8,7 @@ import {
   Space,
   Table,
   Tabs,
+  Tag,
   Typography,
   message,
 } from "antd";
@@ -16,13 +17,16 @@ import { type Dayjs } from "dayjs";
 import { api } from "../api/client";
 import type { Paged } from "../api/types";
 import TradeChainDrawer, {
+  type HistoricalDataQuality,
   type TradeChainData,
   type TradeChainOrder,
   type TradeChainTrade,
 } from "../components/TradeChainDrawer";
+import { formatDecimal, formatTime } from "../utils/format";
+import EnumLabel, { enumLabel } from "../components/EnumLabel";
 
-type OrderRow = TradeChainOrder;
-type TradeRow = TradeChainTrade;
+type OrderRow = TradeChainOrder & { data_quality?: HistoricalDataQuality };
+type TradeRow = TradeChainTrade & { data_quality?: HistoricalDataQuality };
 
 type FilterState = {
   range: [Dayjs, Dayjs] | null;
@@ -150,7 +154,7 @@ export default function History() {
               "partially_filled",
               "risk_rejected",
               "unknown",
-            ].map((v) => ({ value: v, label: v }))}
+            ].map((v) => ({ value: v, label: enumLabel(v, "status") }))}
           />
         </Form.Item>
         <Form.Item>
@@ -176,6 +180,17 @@ export default function History() {
         </Form.Item>
       </Form>
 
+      <Typography.Paragraph type="secondary">
+        当前数据范围：
+        {applied.range
+          ? `${applied.range[0].format("YYYY-MM-DD")} 至 ${applied.range[1].format("YYYY-MM-DD")}（上海时区）`
+          : "全部历史"}
+        {applied.market ? ` · 市场 ${enumLabel(applied.market, "market")}` : ""}
+        {applied.symbol ? ` · 标的 ${applied.symbol}` : ""}
+        {applied.strategy_id ? ` · 策略 ${applied.strategy_id}` : ""}
+        {applied.status ? ` · 状态 ${enumLabel(applied.status, "status")}` : ""}
+      </Typography.Paragraph>
+
       <Tabs
         items={[
           {
@@ -194,16 +209,51 @@ export default function History() {
                   onChange: setPage,
                 }}
                 columns={[
-                  { title: "时间", dataIndex: "created_at", width: 180 },
+                  {
+                    title: "时间",
+                    dataIndex: "created_at",
+                    width: 180,
+                    render: (value: string) => formatTime(value, "MM-DD HH:mm:ss"),
+                  },
                   { title: "标的", dataIndex: "symbol", width: 110 },
-                  { title: "市场", dataIndex: "market", width: 80 },
-                  { title: "方向", dataIndex: "side", width: 70 },
-                  { title: "动作", dataIndex: "action", width: 70 },
-                  { title: "价格", dataIndex: "price", width: 90 },
-                  { title: "数量", dataIndex: "quantity", width: 90 },
-                  { title: "成交量", dataIndex: "filled_quantity", width: 90 },
-                  { title: "状态", dataIndex: "status", width: 110 },
+                  {
+                    title: "市场",
+                    dataIndex: "market",
+                    width: 80,
+                    render: (value: string) => <EnumLabel value={value} kind="market" />,
+                  },
+                  {
+                    title: "方向",
+                    dataIndex: "side",
+                    width: 70,
+                    render: (value: string) => <EnumLabel value={value} kind="side" />,
+                  },
+                  {
+                    title: "动作",
+                    dataIndex: "action",
+                    width: 70,
+                    render: (value: string) => <EnumLabel value={value} kind="action" />,
+                  },
+                  { title: "价格", dataIndex: "price", width: 90, render: (v) => formatDecimal(v, 2) },
+                  { title: "数量", dataIndex: "quantity", width: 90, render: (v) => formatDecimal(v, 0) },
+                  { title: "成交量", dataIndex: "filled_quantity", width: 90, render: (v) => formatDecimal(v, 0) },
+                  {
+                    title: "状态",
+                    dataIndex: "status",
+                    width: 110,
+                    render: (value: string) => <EnumLabel value={value} kind="status" />,
+                  },
                   { title: "策略", dataIndex: "strategy_id", width: 100 },
+                  {
+                    title: "数据属性",
+                    dataIndex: "data_quality",
+                    width: 130,
+                    render: (quality: HistoricalDataQuality | undefined) => (
+                      <Tag color={quality?.isolated ? "red" : quality?.classification === "simulated_data" ? "gold" : "green"}>
+                        {quality?.label ?? "未分类"}
+                      </Tag>
+                    ),
+                  },
                   {
                     title: "操作",
                     width: 100,
@@ -233,14 +283,34 @@ export default function History() {
                   onChange: setPage,
                 }}
                 columns={[
-                  { title: "成交时间", dataIndex: "trade_time", width: 180 },
+                  {
+                    title: "成交时间",
+                    dataIndex: "trade_time",
+                    width: 180,
+                    render: (value: string) => formatTime(value, "MM-DD HH:mm:ss"),
+                  },
                   { title: "标的", dataIndex: "symbol", width: 110 },
-                  { title: "方向", dataIndex: "side", width: 70 },
-                  { title: "价格", dataIndex: "price", width: 90 },
-                  { title: "数量", dataIndex: "quantity", width: 90 },
-                  { title: "手续费", dataIndex: "fee", width: 90 },
+                  {
+                    title: "方向",
+                    dataIndex: "side",
+                    width: 70,
+                    render: (value: string) => <EnumLabel value={value} kind="side" />,
+                  },
+                  { title: "价格", dataIndex: "price", width: 90, render: (v) => formatDecimal(v, 2) },
+                  { title: "数量", dataIndex: "quantity", width: 90, render: (v) => formatDecimal(v, 0) },
+                  { title: "手续费", dataIndex: "fee", width: 90, render: (v) => formatDecimal(v, 2) },
                   { title: "委托号", dataIndex: "client_order_id", width: 180 },
                   { title: "策略", dataIndex: "strategy_id", width: 100 },
+                  {
+                    title: "数据属性",
+                    dataIndex: "data_quality",
+                    width: 130,
+                    render: (quality: HistoricalDataQuality | undefined) => (
+                      <Tag color={quality?.isolated ? "red" : quality?.classification === "simulated_data" ? "gold" : "green"}>
+                        {quality?.label ?? "未分类"}
+                      </Tag>
+                    ),
+                  },
                   {
                     title: "操作",
                     width: 100,

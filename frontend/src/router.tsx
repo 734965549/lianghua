@@ -6,6 +6,7 @@ import MainLayout from "./layouts/MainLayout";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Market = lazy(() => import("./pages/Market"));
 const Strategies = lazy(() => import("./pages/Strategies"));
+const StrategyBuilder = lazy(() => import("./pages/StrategyBuilder"));
 const Trading = lazy(() => import("./pages/Trading"));
 const Positions = lazy(() => import("./pages/Positions"));
 const History = lazy(() => import("./pages/History"));
@@ -15,6 +16,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Logs = lazy(() => import("./pages/Logs"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
 const DataManagement = lazy(() => import("./pages/DataManagement"));
+const Backtest = lazy(() => import("./pages/Backtest"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -22,7 +24,7 @@ function LazyPage({ children }: { children: React.ReactNode }) {
     <Suspense
       fallback={
         <div style={{ padding: 48, textAlign: "center" }}>
-          <Spin tip="加载中…" />
+          <Spin description="加载中…" />
         </div>
       }
     >
@@ -42,6 +44,9 @@ export const router = createBrowserRouter([
       { path: "watchlist", element: <LazyPage><Watchlist /></LazyPage> },
       { path: "data", element: <LazyPage><DataManagement /></LazyPage> },
       { path: "strategies", element: <LazyPage><Strategies /></LazyPage> },
+      { path: "strategies/new", element: <LazyPage><StrategyBuilder /></LazyPage> },
+      { path: "strategies/:id/edit", element: <LazyPage><StrategyBuilder /></LazyPage> },
+      { path: "backtest", element: <LazyPage><Backtest /></LazyPage> },
       { path: "trading", element: <LazyPage><Trading /></LazyPage> },
       { path: "positions", element: <LazyPage><Positions /></LazyPage> },
       { path: "history", element: <LazyPage><History /></LazyPage> },

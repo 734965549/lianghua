@@ -44,7 +44,19 @@ class PositionRepository(BaseRepository[Position]):
             q = q.filter(Position.market == market)
         if symbol:
             q = q.filter(Position.symbol == symbol)
-        return q.order_by(desc(Position.snapshot_time)).limit(limit).all()
+        rows = q.order_by(desc(Position.snapshot_time), desc(Position.created_at)).all()
+        latest: dict[tuple, Position] = {}
+        for row in rows:
+            key = (row.account_id, row.market, row.symbol, row.direction)
+            if key not in latest:
+                latest[key] = row
+            if len(latest) >= limit:
+                break
+        return [
+            row
+            for row in latest.values()
+            if Decimal(str(row.quantity)) != 0
+        ]
 
     def get_latest_for_symbol(
         self,

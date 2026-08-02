@@ -64,6 +64,30 @@ def test_place_order_success(adapter):
     trades = [e[1] for e in events if e[0] == "trade"]
     assert len(trades) == 2
     assert sum(t.quantity for t in trades) == Decimal("100")
+    assert all(t.price <= req.price for t in trades)
+
+
+@pytest.mark.unit
+def test_sell_limit_never_fills_below_limit(adapter):
+    trades = []
+    adapter.on_trade_update(trades.append)
+    req = PlaceOrderRequest(
+        client_order_id="sell_limit",
+        account_id=uuid4(),
+        market=Market.STOCK,
+        symbol="000001.SZ",
+        side=OrderSide.SELL,
+        action=SignalAction.CLOSE,
+        price_type=PriceType.LIMIT,
+        price=Decimal("11.47"),
+        quantity=Decimal("100"),
+    )
+
+    assert adapter.place_order(req).success
+    time.sleep(0.6)
+
+    assert len(trades) == 2
+    assert all(trade.price >= req.price for trade in trades)
 
 
 @pytest.mark.unit

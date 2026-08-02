@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from app.schemas.enums import Market, OrderSide, OrderStatus, PriceType, SignalAction
 from app.sdk.base import SDKDisconnected, SDKOrderRejected, TradingAdapter
+from app.sdk.matching import limit_safe_fill_price
 from app.sdk.models import (
     AccountSnapshot,
     AdapterStatus,
@@ -92,6 +93,11 @@ class MockTradingAdapter(TradingAdapter):
             self._quote_stop.clear()
             self._quote_thread = threading.Thread(target=self._quote_loop, daemon=True)
             self._quote_thread.start()
+
+    def unsubscribe_quotes(self, symbols: list[str]) -> None:
+        with self._lock:
+            for symbol in symbols:
+                self._subscribed.discard(symbol)
 
     def stop_quotes(self) -> None:
         """测试辅助：停止行情推送线程。"""
@@ -187,10 +193,10 @@ class MockTradingAdapter(TradingAdapter):
         return AccountSnapshot(
             account_id=uuid4(),
             account_no=f"MOCK_{self.market.value.upper()}",
-            total_asset=Decimal("1000000"),
+            total_asset=Decimal("800000"),
             available_cash=Decimal("800000"),
-            frozen_cash=Decimal("50000"),
-            market_value=Decimal("150000"),
+            frozen_cash=Decimal("0"),
+            market_value=Decimal("0"),
             pnl=Decimal("0"),
             snapshot_time=datetime.now(timezone.utc),
         )
@@ -219,7 +225,7 @@ class MockTradingAdapter(TradingAdapter):
 
         threading.Thread(
             target=self._simulate_fill,
-            args=(request.client_order_id, sdk_order_id, request.quantity, request.symbol, request.side),
+            args=(request.client_order_id, sdk_order_id, request),
             daemon=True,
         ).start()
 
@@ -235,20 +241,35 @@ class MockTradingAdapter(TradingAdapter):
         self,
         client_order_id: str,
         sdk_order_id: str,
-        quantity: Decimal,
-        symbol: str,
-        side: OrderSide,
+        request: PlaceOrderRequest,
     ) -> None:
         time.sleep(0.2)
+        quantity = request.quantity
         partial = (quantity * Decimal("0.5")).quantize(Decimal("1"))
         if partial <= 0:
             partial = quantity
-        self._emit_trade(sdk_order_id, client_order_id, partial, Decimal("10.05"), symbol, side)
+        first_price = limit_safe_fill_price(request, Decimal("10.05"))
+        self._emit_trade(
+            sdk_order_id,
+            client_order_id,
+            partial,
+            first_price,
+            request.symbol,
+            request.side,
+        )
         self._emit_order_update(client_order_id, sdk_order_id, OrderStatus.PARTIALLY_FILLED, partial, quantity - partial)
         if quantity > partial:
             time.sleep(0.2)
             rest = quantity - partial
-            self._emit_trade(sdk_order_id, client_order_id, rest, Decimal("10.06"), symbol, side)
+            second_price = limit_safe_fill_price(request, Decimal("10.06"))
+            self._emit_trade(
+                sdk_order_id,
+                client_order_id,
+                rest,
+                second_price,
+                request.symbol,
+                request.side,
+            )
             self._emit_order_update(client_order_id, sdk_order_id, OrderStatus.FILLED, quantity, Decimal("0"))
         else:
             self._emit_order_update(client_order_id, sdk_order_id, OrderStatus.FILLED, quantity, Decimal("0"))

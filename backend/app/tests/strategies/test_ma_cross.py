@@ -72,6 +72,7 @@ def test_ma_cross_golden_cross_emits_buy(ma_cross_strategy):
     assert len(submitted) == 1
     assert submitted[0]["side"] == OrderSide.BUY
     assert submitted[0]["symbol"] == "600000.SH"
+    assert submitted[0]["signal_time"].utcoffset() == timedelta(0)
 
 
 def test_ma_cross_death_cross_emits_sell(ma_cross_strategy):

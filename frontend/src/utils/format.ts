@@ -1,4 +1,11 @@
 import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const DISPLAY_TIMEZONE = "Asia/Shanghai";
 
 /** 将后端 decimal 字符串格式化为固定小数位 */
 export function formatDecimal(
@@ -21,19 +28,23 @@ export function formatPercent(
   return `${(n * 100).toFixed(digits)}%`;
 }
 
-/** ISO 时间格式化 */
+/** UTC ISO 时间统一转换为上海时区；无偏移字符串按数据库 UTC 兼容处理。 */
 export function formatTime(
   value: string | Date | null | undefined,
   pattern = "HH:mm:ss",
 ): string {
   if (!value) return "-";
-  return dayjs(value).format(pattern);
+  const normalized =
+    typeof value === "string" && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+      ? `${value}Z`
+      : value;
+  return dayjs(normalized).tz(DISPLAY_TIMEZONE).format(pattern);
 }
 
 /** A 股涨红跌绿 */
 export function formatChangeColor(rate: string | number): string | undefined {
   const n = Number(rate);
-  if (n > 0) return "#cf1322";
-  if (n < 0) return "#3f8600";
+  if (n > 0) return "#ff4d57";
+  if (n < 0) return "#18c78c";
   return undefined;
 }

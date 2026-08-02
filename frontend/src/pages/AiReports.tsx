@@ -10,14 +10,16 @@ import {
   Row,
   Select,
   Table,
-  Typography,
   message,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import type { Dayjs } from "dayjs";
 import { api } from "../api/client";
 import type { Paged } from "../api/types";
 import AiReportViewer, { type AiReportDetail } from "../components/AiReportViewer";
+import PageHeader from "../components/PageHeader";
+import { formatTime } from "../utils/format";
 
 type ReportSummary = {
   report_id: string;
@@ -88,18 +90,30 @@ export default function AiReports() {
   });
 
   return (
-    <div>
-      <Typography.Title level={3} style={{ marginTop: 0 }}>
-        AI 复盘
-      </Typography.Title>
+    <div className="ai-reports-page">
+      <PageHeader
+        eyebrow="INTELLIGENCE / POST-TRADE"
+        title="AI 复盘"
+        description="将真实成交、风险事件和策略指标交给分析引擎，形成可追溯的盘后归因。"
+      />
 
       <Alert
         type="warning"
         showIcon
         banner
         style={{ marginBottom: 16 }}
-        message="AI 报告仅用于复盘参考，不提供直接下单入口"
+        title="AI 报告仅用于复盘参考，不提供直接下单入口"
         description="可选接入外部 AI 时仅发送聚合指标与必要明细，不发送 SDK 密码等敏感字段。未配置 AI 时使用本地规则化模板。"
+      />
+
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        title="AI 密钥与模型配置统一在系统设置维护"
+        description={
+          <Link to="/settings">前往系统设置查看或修改 AI 分析引擎配置</Link>
+        }
       />
 
       <Card size="small" title="生成报告" style={{ marginBottom: 16 }}>
@@ -162,8 +176,19 @@ export default function AiReports() {
                 },
               })}
               columns={[
-                { title: "生成时间", dataIndex: "generated_at", width: 170 },
-                { title: "模型", dataIndex: "model_name", width: 100 },
+                {
+                  title: "生成时间",
+                  dataIndex: "generated_at",
+                  width: 170,
+                  render: (value: string) => formatTime(value, "MM-DD HH:mm:ss"),
+                },
+                {
+                  title: "模型",
+                  dataIndex: "model_name",
+                  width: 110,
+                  render: (value: string) =>
+                    value === "rule_based" ? "本地规则引擎" : value,
+                },
                 {
                   title: "盈亏",
                   dataIndex: ["metrics_summary", "total_pnl"],

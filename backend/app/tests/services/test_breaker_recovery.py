@@ -8,6 +8,7 @@ import pytest
 
 from app.api.response import BizError
 from app.repositories.account_repo import AccountRepository
+from app.repositories.asset_repo import AssetRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.strategy_repo import StrategyRunRepository
 from app.schemas.enums import (
@@ -62,6 +63,16 @@ def _create_order(db, *, status: OrderStatus = OrderStatus.SUBMITTING, client_or
         status=status,
         submitted_at=datetime.now(timezone.utc),
     )
+
+
+def _seed_reconciled_assets(db):
+    accounts = AccountRepository(db)
+    assets = AssetRepository(db)
+    for market in (Market.STOCK, Market.FUTURES):
+        account = accounts.get_or_create_default(market)
+        snapshot = sdk_manager.get_adapter_for_market(market).get_account()
+        assets.insert_snapshot(account.id, snapshot)
+    db.flush()
 
 
 def _cleanup_phase5_rows(db):
@@ -166,11 +177,21 @@ def test_resume_blocked_when_unknown_orders(db, reset_system_state):
 @pytest.mark.integration
 def test_resume_success_when_preconditions_met(db, reset_system_state):
     sdk_manager.ensure_connected()
+    _seed_reconciled_assets(db)
     svc = SystemStateService(db, correlation_id="test_resume_ok")
     svc.transition(SystemStatus.CIRCUIT_BREAKER, reason="test")
     db.commit()
 
     risk = RiskService(db, correlation_id="test_resume_ok")
+    checklist = risk.get_resume_checklist()
+    assert checklist["all_passed"] is True
+    assert {item["code"] for item in checklist["checks"]} >= {
+        "database",
+        "channel",
+        "market_data",
+        "unknown_orders",
+        "account_reconciliation",
+    }
     result = risk.resume("已确认环境正常")
     db.commit()
     assert result["status"] == "trading"

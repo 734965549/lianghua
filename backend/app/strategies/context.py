@@ -1,7 +1,7 @@
-from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
+from app.core.time import utc_now
 from app.schemas.enums import Market, OrderSide, PriceType, SignalAction
 from app.sdk.models import KlineBar, QuoteSnapshot
 
@@ -65,7 +65,7 @@ class StrategyContext:
             price=price or Decimal("0"),
             quantity=quantity,
             reason=reason,
-            signal_time=datetime.now(),
+            signal_time=utc_now(),
             metadata=metadata or {},
         )
         return signal_id

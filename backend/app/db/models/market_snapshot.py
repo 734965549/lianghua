@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Numeric, String, func
+from sqlalchemy import DateTime, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,14 @@ from app.schemas.enums import Market
 
 class MarketSnapshot(Base):
     __tablename__ = "market_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "market",
+            "symbol",
+            "quote_time",
+            name="uq_market_snapshots_identity",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
