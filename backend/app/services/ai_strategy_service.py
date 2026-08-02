@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.api.response import BizError
+from app.core.config import settings
 from app.schemas.error_codes import ErrorCode
 from app.services.ai_client import get_ai_client, resolve_model_name
 from app.services.audit_service import AuditService
@@ -123,7 +124,9 @@ class AiStrategyService:
         self.db = db
         self.audit = AuditService(db, correlation_id=correlation_id)
         self.ai_config = SettingsService(db, correlation_id=correlation_id).get_ai_runtime_config()
-        self.ai_client = get_ai_client(self.ai_config)
+        self.ai_client = get_ai_client(
+            self.ai_config, timeout=settings.ai_generation_timeout
+        )
         self.model_name = resolve_model_name(self.ai_config)
         self.catalog = strategy_builder_service.get_indicator_catalog()
 
@@ -246,15 +249,29 @@ class AiStrategyService:
                 result="failed",
                 reason=str(exc),
             )
+            message = self._format_ai_error(exc)
             raise BizError(
                 ErrorCode.AI_STRATEGY_FAILED,
-                f"AI 策略生成失败: {exc}",
+                message,
                 retryable=True,
             ) from exc
 
         if not content.strip():
             raise BizError(ErrorCode.AI_STRATEGY_INVALID_OUTPUT, "AI 返回为空")
         return content
+
+    @staticmethod
+    def _format_ai_error(exc: Exception) -> str:
+        from openai import APITimeoutError
+
+        if isinstance(exc, APITimeoutError):
+            timeout = int(settings.ai_generation_timeout)
+            return (
+                f"AI 策略生成超时（{timeout} 秒）。"
+                "连通性测试只验证模型列表，完整生成耗时更长，"
+                "请稍后重试或调大 LIANGHUA_AI_GENERATION_TIMEOUT。"
+            )
+        return f"AI 策略生成失败: {exc}"
 
     def _retry_with_validation_errors(
         self,

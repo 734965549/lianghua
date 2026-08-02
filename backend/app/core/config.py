@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_base_url: str = ""
     ai_model: str = "gpt-4o-mini"
+    # 策略/复盘等生成类调用超时（秒）；连通性测试仍用较短超时
+    ai_generation_timeout: float = 120.0
 
     # 运行
     host: str = "127.0.0.1"

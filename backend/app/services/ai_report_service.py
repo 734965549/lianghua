@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.repositories.ai_report_repo import AiReportRepository
 from app.repositories.trade_repo import TradeRepository
 from app.services.ai_client import get_ai_client, resolve_model_name
@@ -58,7 +59,9 @@ class AiReportService:
         self.repo = AiReportRepository(db)
         self.trade_repo = TradeRepository(db)
         self.ai_config = SettingsService(db, correlation_id=correlation_id).get_ai_runtime_config()
-        self.ai_client = get_ai_client(self.ai_config)
+        self.ai_client = get_ai_client(
+            self.ai_config, timeout=settings.ai_generation_timeout
+        )
         self.model_name = resolve_model_name(self.ai_config)
 
     def generate(

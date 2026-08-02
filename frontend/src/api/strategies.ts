@@ -171,5 +171,7 @@ export function generateStrategyFromPrompt(data: {
   market?: string;
   interval?: string;
 }) {
-  return api.post<AiStrategyGenerateResult>("/ai/strategies/generate", data);
+  return api.post<AiStrategyGenerateResult>("/ai/strategies/generate", data, {
+    signal: AbortSignal.timeout(130_000),
+  });
 }
