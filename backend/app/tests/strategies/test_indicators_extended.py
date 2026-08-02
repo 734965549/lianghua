@@ -7,14 +7,14 @@ from app.strategies.rule_schema import DEFAULT_MA_CROSS_DEFINITION
 from app.strategies.rule_validator import RuleValidator
 
 
-def test_indicator_catalog_includes_macd():
-    types = {item["type"] for item in IndicatorRegistry.catalog()}
-    assert "macd" in types
-    assert "bollinger" in types
-    assert "atr" in types
-    assert "roc" in types
-    assert "volume_sma" in types
-    assert "kdj" in types
+def test_indicator_catalog_period_not_in_params():
+    catalog = {item["type"]: item for item in IndicatorRegistry.catalog()}
+    for ind_type in ("sma", "ema", "rsi", "atr", "roc", "kdj", "volume_sma", "bollinger"):
+        meta = catalog[ind_type]
+        assert meta.get("requires_period") is True
+        assert "period" in meta
+        param_names = {p["name"] for p in meta.get("params", [])}
+        assert "period" not in param_names
 
 
 def test_macd_definition_validate():

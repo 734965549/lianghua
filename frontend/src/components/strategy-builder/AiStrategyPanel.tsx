@@ -15,6 +15,7 @@ type Props = {
     name: string;
     description: string;
     definition: StrategyDefinition;
+    validation: { valid: boolean; errors: string[] };
   }) => void;
 };
 
@@ -32,16 +33,19 @@ export default function AiStrategyPanel({ onGenerated }: Props) {
         interval,
       }),
     onSuccess: (data) => {
+      if (!data.validation.valid) {
+        message.error(
+          `AI 生成的策略未通过校验：${data.validation.errors.slice(0, 3).join("；")}`,
+        );
+        return;
+      }
       onGenerated({
         name: data.name,
         description: data.description,
         definition: data.definition,
+        validation: data.validation,
       });
-      if (data.validation.valid) {
-        message.success("AI 已生成策略定义，请检查后保存");
-      } else {
-        message.warning(`AI 已生成策略，但有 ${data.validation.errors.length} 个校验问题待修正`);
-      }
+      message.success("AI 已生成策略定义，请检查后保存");
       setOpen(false);
     },
     onError: (err) => {

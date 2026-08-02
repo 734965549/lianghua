@@ -4,6 +4,9 @@ from app.strategies.indicators.moving_average import EMAIndicator, SMAIndicator
 from app.strategies.indicators.volatility import ATRIndicator, BollingerIndicator
 from app.strategies.indicators.volume import VolumeSMAIndicator
 
+_PERIOD_1_500 = {"type": "integer", "min": 1, "max": 500}
+_PERIOD_2_500 = {"type": "integer", "min": 2, "max": 500}
+
 IndicatorRegistry.register(
     "sma",
     SMAIndicator,
@@ -11,7 +14,8 @@ IndicatorRegistry.register(
         "name": "简单移动平均",
         "outputs": ["value"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 1, "max": 500}],
+        "period": _PERIOD_1_500,
+        "params": [],
         "sources": ["open", "high", "low", "close", "volume"],
     },
 )
@@ -22,7 +26,8 @@ IndicatorRegistry.register(
         "name": "指数移动平均",
         "outputs": ["value"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 1, "max": 500}],
+        "period": _PERIOD_1_500,
+        "params": [],
         "sources": ["open", "high", "low", "close", "volume"],
     },
 )
@@ -33,7 +38,8 @@ IndicatorRegistry.register(
         "name": "相对强弱指数",
         "outputs": ["value"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 2, "max": 500}],
+        "period": _PERIOD_2_500,
+        "params": [],
         "sources": ["close"],
     },
 )
@@ -59,8 +65,8 @@ IndicatorRegistry.register(
         "name": "布林带",
         "outputs": ["value", "upper", "lower"],
         "requires_period": True,
+        "period": _PERIOD_2_500,
         "params": [
-            {"name": "period", "type": "integer", "min": 2, "max": 500},
             {"name": "std_dev", "type": "decimal", "default": "2", "min": "0.1", "max": "5"},
         ],
         "sources": ["close"],
@@ -73,7 +79,8 @@ IndicatorRegistry.register(
         "name": "平均真实波幅",
         "outputs": ["value"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 1, "max": 500}],
+        "period": _PERIOD_1_500,
+        "params": [],
         "sources": ["close"],
     },
 )
@@ -84,7 +91,8 @@ IndicatorRegistry.register(
         "name": "变动率 ROC",
         "outputs": ["value"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 1, "max": 500}],
+        "period": _PERIOD_1_500,
+        "params": [],
         "sources": ["close"],
     },
 )
@@ -95,7 +103,8 @@ IndicatorRegistry.register(
         "name": "KDJ 随机指标",
         "outputs": ["k", "d", "j"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 2, "max": 500}],
+        "period": _PERIOD_2_500,
+        "params": [],
         "sources": ["close"],
     },
 )
@@ -106,7 +115,8 @@ IndicatorRegistry.register(
         "name": "成交量均线",
         "outputs": ["value"],
         "requires_period": True,
-        "params": [{"name": "period", "type": "integer", "min": 1, "max": 500}],
+        "period": _PERIOD_1_500,
+        "params": [],
         "sources": ["volume"],
     },
 )

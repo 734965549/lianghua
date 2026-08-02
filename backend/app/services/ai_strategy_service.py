@@ -23,19 +23,59 @@ from app.services.ai_client import get_ai_client, resolve_model_name
 from app.services.audit_service import AuditService
 from app.services.settings_service import SettingsService
 from app.services.strategy_builder_service import strategy_builder_service
-from app.strategies.rule_schema import DEFAULT_SYMBOLS_CONFIG
+from app.strategies.rule_schema import DEFAULT_MA_CROSS_DEFINITION, DEFAULT_SYMBOLS_CONFIG
 from app.strategies.rule_validator import RuleValidator
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是量化策略定义生成器。用户用自然语言描述交易策略，你只输出一个 JSON 对象，不要输出 Python 代码，不要解释。
+_FEW_SHOT_EXAMPLE = json.dumps(
+    {
+        "name": "RSI 超卖反弹",
+        "description": "RSI 低于 30 买入，高于 70 卖出，账户 30% 仓位",
+        "definition": {
+            "schema_version": 1,
+            "market": "stock",
+            "interval": "1d",
+            "parameters": {},
+            "indicators": [
+                {"id": "rsi_14", "type": "rsi", "source": "close", "period": 14},
+            ],
+            "formulas": [],
+            "entry_rule": {
+                "all": [
+                    {
+                        "operator": "lt",
+                        "left": {"indicator": "rsi_14", "output": "value"},
+                        "right": {"constant": "30"},
+                    }
+                ]
+            },
+            "exit_rule": {
+                "any": [
+                    {
+                        "operator": "gt",
+                        "left": {"indicator": "rsi_14", "output": "value"},
+                        "right": {"constant": "70"},
+                    }
+                ]
+            },
+            "execution": {"quantity_pct": {"constant": "30"}, "cooldown_bars": 1},
+            "symbols": {"mode": "runtime", "list": [], "max_concurrent": 5},
+            "risk": {"stop_loss_pct": "5", "take_profit_pct": "10", "max_position_pct": "30"},
+        },
+    },
+    ensure_ascii=False,
+    indent=2,
+)
+
+SYSTEM_PROMPT = f"""你是量化策略定义生成器。用户用自然语言描述交易策略，你只输出一个 JSON 对象，不要输出 Python 代码，不要解释。
 
 输出 JSON 结构：
-{
+{{
   "name": "策略名称（中文，简短）",
   "description": "策略描述（一句话）",
-  "definition": { ...策略定义... }
-}
+  "definition": {{ ...策略定义... }}
+}}
 
 definition 必须包含：
 - schema_version: 固定 1
@@ -46,13 +86,24 @@ definition 必须包含：
 - formulas: 自定义公式数组（无则 []）
 - entry_rule: 买入规则树
 - exit_rule: 卖出规则树
-- execution: { quantity 或 quantity_pct, cooldown_bars }
-- symbols: { mode: "runtime"|"fixed", list: [], max_concurrent: 5 }
-- risk: { stop_loss_pct, take_profit_pct, max_position_pct }（字符串数字）
+- execution: {{ quantity 或 quantity_pct, cooldown_bars }}
+- symbols: {{ mode: "runtime"|"fixed", list: [], max_concurrent: 5 }}
+- risk: {{ stop_loss_pct, take_profit_pct, max_position_pct }}（字符串数字）
 
 指标 type：sma, ema, rsi, macd, bollinger, atr, roc, volume_sma, kdj
 指标输出：sma/ema/rsi/atr/roc/volume_sma→value；macd→value/signal/histogram；bollinger→value/upper/lower；kdj→k/d/j
-macd 不需要 period，用 params: { fast, slow, signal }；bollinger 额外 params: { std_dev: "2" }
+
+【指标 period 规则 — 必须严格遵守】
+- 需要周期的指标（sma/ema/rsi/bollinger/atr/roc/volume_sma/kdj）必须在指标对象顶层写 period
+- period 只能是整数（如 20）或参数引用 {{ "parameter": "参数名" }}
+- 禁止把 period 放进 params；params 仅用于 macd 的 fast/slow/signal 和 bollinger 的 std_dev
+- macd 不需要顶层 period，示例：{{ "id": "macd_1", "type": "macd", "source": "close", "params": {{ "fast": 12, "slow": 26, "signal": 9 }} }}
+
+【execution 规则 — 必须严格遵守】
+- quantity 与 quantity_pct 二选一，值必须是操作数对象，禁止裸数字
+- 固定股数：{{ "quantity": {{ "constant": "100" }}, "cooldown_bars": 1 }}
+- 账户百分比：{{ "quantity_pct": {{ "constant": "30" }}, "cooldown_bars": 1 }}
+- 引用参数：{{ "quantity": {{ "parameter": "quantity" }} }}
 
 操作符 operator：
 - 比较: gt, gte, lt, lte, eq
@@ -61,18 +112,24 @@ macd 不需要 period，用 params: { fast, slow, signal }；bollinger 额外 pa
 - 趋势: rising, falling（operand）
 
 操作数 operand：
-- 指标: { "indicator": "id", "output": "value" }
-- 价格: { "field": "open|high|low|close|volume" }
-- 常量: { "constant": "30" }
-- 参数: { "parameter": "name" }
-- 公式: { "formula": "id" }
+- 指标: {{ "indicator": "id", "output": "value" }}
+- 价格: {{ "field": "open|high|low|close|volume" }}
+- 常量: {{ "constant": "30" }}
+- 参数: {{ "parameter": "name" }}
+- 公式: {{ "formula": "id" }}
 
-规则树：{ "all": [...] } 全部满足；{ "any": [...] } 任一满足；{ "not": ... } 取反
+规则树：{{ "all": [...] }} 全部满足；{{ "any": [...] }} 任一满足；{{ "not": ... }} 取反
 
 公式 expression：+ - * / ( )，引用 @指标.输出 $close #参数 &公式id
 
 约束：指标≤20，条件≤50，嵌套≤5，period 1-500，execution 必须指定 quantity 或 quantity_pct。
-只输出 JSON，不要用 markdown 代码块包裹。"""
+只输出 JSON，不要用 markdown 代码块包裹。
+
+完整合法示例（请严格参照字段形状）：
+{_FEW_SHOT_EXAMPLE}
+
+双均线参考（period 可用参数引用）：
+{json.dumps(DEFAULT_MA_CROSS_DEFINITION, ensure_ascii=False, indent=2)}"""
 
 
 def extract_json_object(text: str) -> dict:
@@ -103,18 +160,100 @@ def extract_json_object(text: str) -> dict:
     raise ValueError("无法解析 AI 返回的 JSON")
 
 
+_OPERAND_KEYS = frozenset({"indicator", "field", "constant", "parameter", "formula"})
+
+
+def _coerce_period(value: Any) -> Any:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    if isinstance(value, dict) and "parameter" in value:
+        return value
+    return value
+
+
+def _normalize_operand(value: Any) -> dict | None:
+    if isinstance(value, dict) and _OPERAND_KEYS.intersection(value):
+        return value
+    if isinstance(value, (int, float)):
+        return {"constant": str(value)}
+    if isinstance(value, str):
+        try:
+            float(value)
+            return {"constant": value}
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_indicator(ind: dict) -> dict:
+    normalized = dict(ind)
+    params = dict(normalized.get("params") or {})
+
+    if normalized.get("period") is None and "period" in params:
+        normalized["period"] = _coerce_period(params.pop("period"))
+
+    if "period" in normalized:
+        normalized["period"] = _coerce_period(normalized["period"])
+
+    if normalized.get("period") is None:
+        ind_id = normalized.get("id", "")
+        if isinstance(ind_id, str):
+            match = re.search(r"_(\d+)$", ind_id)
+            if match:
+                normalized["period"] = int(match.group(1))
+
+    if params:
+        normalized["params"] = params
+    elif "params" in normalized:
+        normalized.pop("params")
+
+    return normalized
+
+
+def _normalize_execution(execution: dict) -> dict:
+    normalized = dict(execution)
+    for key in ("quantity", "quantity_pct"):
+        if key not in normalized:
+            continue
+        fixed = _normalize_operand(normalized[key])
+        if fixed is None:
+            normalized.pop(key)
+        else:
+            normalized[key] = fixed
+
+    if normalized.get("quantity") is None and normalized.get("quantity_pct") is None:
+        normalized["quantity"] = {"constant": "100"}
+    normalized.setdefault("cooldown_bars", 1)
+    return normalized
+
+
 def normalize_definition(definition: dict) -> dict:
-    """补齐 AI 可能遗漏的默认字段。"""
+    """补齐 AI 可能遗漏的默认字段，并修正常见形状错误。"""
     normalized = dict(definition)
     normalized.setdefault("schema_version", 1)
     normalized.setdefault("formulas", [])
     normalized.setdefault("parameters", {})
-    normalized.setdefault("indicators", [])
     normalized.setdefault("risk", {})
+
+    indicators = normalized.get("indicators")
+    if isinstance(indicators, list):
+        normalized["indicators"] = [
+            _normalize_indicator(item) for item in indicators if isinstance(item, dict)
+        ]
+    else:
+        normalized["indicators"] = []
+
     if "symbols" not in normalized or not isinstance(normalized.get("symbols"), dict):
         normalized["symbols"] = dict(DEFAULT_SYMBOLS_CONFIG)
-    if "execution" not in normalized or not isinstance(normalized.get("execution"), dict):
+
+    execution = normalized.get("execution")
+    if isinstance(execution, dict):
+        normalized["execution"] = _normalize_execution(execution)
+    else:
         normalized["execution"] = {"quantity": {"constant": "100"}, "cooldown_bars": 1}
+
     return normalized
 
 
@@ -175,17 +314,34 @@ class AiStrategyService:
                 definition = fixed["definition"]
                 errors = fixed["errors"]
 
+        if errors:
+            self.audit.log(
+                action="ai_strategy_generate",
+                module="ai",
+                object_type="strategy_definition",
+                object_id="",
+                result="failed",
+                request_summary={
+                    "prompt_len": len(cleaned),
+                    "validation_errors": errors[:10],
+                },
+            )
+            raise BizError(
+                ErrorCode.AI_STRATEGY_INVALID_OUTPUT,
+                f"AI 生成的策略定义未通过校验（{len(errors)} 项），请调整描述后重试",
+                debug="; ".join(errors[:10]),
+            )
+
         self.audit.log(
             action="ai_strategy_generate",
             module="ai",
             object_type="strategy_definition",
             object_id="",
-            result="success" if not errors else "warning",
+            result="success",
             request_summary={
                 "prompt_len": len(cleaned),
                 "market": definition.get("market"),
                 "interval": definition.get("interval"),
-                "validation_errors": errors[:5],
             },
         )
 
@@ -193,7 +349,7 @@ class AiStrategyService:
             "name": name,
             "description": description,
             "definition": definition,
-            "validation": {"valid": len(errors) == 0, "errors": errors},
+            "validation": {"valid": True, "errors": []},
             "model_name": self.model_name,
         }
 

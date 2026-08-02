@@ -218,7 +218,8 @@ export default function StrategyBuilder() {
           <div className="research-form-grid">
             <div className="span-2">
               <AiStrategyPanel
-                onGenerated={({ name: aiName, description: aiDesc, definition: aiDef }) => {
+                onGenerated={({ name: aiName, description: aiDesc, definition: aiDef, validation }) => {
+                  if (!validation.valid) return;
                   if (aiName) setName(aiName);
                   if (aiDesc) setDescription(aiDesc);
                   setDefinition(aiDef);
