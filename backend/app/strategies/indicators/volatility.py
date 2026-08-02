@@ -33,7 +33,7 @@ class ATRIndicator(Indicator):
 
 
 class BollingerIndicator(Indicator):
-    output_names = ("value", "upper", "lower")
+    output_names = ("value", "upper", "lower", "width", "pct_b")
 
     def __init__(
         self,
@@ -59,4 +59,71 @@ class BollingerIndicator(Indicator):
         std = variance.sqrt() if variance > 0 else Decimal("0")
         upper = middle + self.std_dev * std
         lower = middle - self.std_dev * std
-        self._set_outputs({"value": middle, "upper": upper, "lower": lower})
+        width = upper - lower if upper > lower else Decimal("0")
+        pct_b = (price - lower) / width if width > 0 else Decimal("0.5")
+        self._set_outputs(
+            {
+                "value": middle,
+                "upper": upper,
+                "lower": lower,
+                "width": width,
+                "pct_b": pct_b,
+            }
+        )
+
+
+class KeltnerIndicator(Indicator):
+    """肯特纳通道（EMA + ATR）。"""
+
+    output_names = ("value", "upper", "lower")
+
+    def __init__(
+        self,
+        *,
+        period: int,
+        source: str = "close",
+        multiplier: Decimal | str | float = Decimal("2"),
+    ):
+        super().__init__(period=period, source=source)
+        self.multiplier = Decimal(str(multiplier))
+        from app.strategies.indicators.moving_average import EMAIndicator
+
+        self._ema = EMAIndicator(period=period, source=source)
+        self._atr = ATRIndicator(period=period, source=source)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.period + 1
+
+    def update(self, bar: KlineBar) -> None:
+        self._ema.update(bar)
+        self._atr.update(bar)
+        if not self._ema.ready or not self._atr.ready or self._atr.value is None:
+            self._set_outputs({"value": None, "upper": None, "lower": None})
+            return
+        middle = self._ema.value
+        band = self.multiplier * self._atr.value
+        self._set_outputs(
+            {"value": middle, "upper": middle + band, "lower": middle - band}
+        )
+
+
+class DonchianIndicator(Indicator):
+    """唐奇安通道。"""
+
+    output_names = ("value", "upper", "lower")
+
+    def __init__(self, *, period: int, source: str = "close"):
+        super().__init__(period=period, source=source)
+        self._highs: deque[Decimal] = deque(maxlen=period)
+        self._lows: deque[Decimal] = deque(maxlen=period)
+
+    def update(self, bar: KlineBar) -> None:
+        self._highs.append(_to_decimal(bar.high))
+        self._lows.append(_to_decimal(bar.low))
+        if len(self._highs) < self.period:
+            self._set_outputs({"value": None, "upper": None, "lower": None})
+            return
+        upper = max(self._highs)
+        lower = min(self._lows)
+        self._set_outputs({"value": (upper + lower) / Decimal("2"), "upper": upper, "lower": lower})

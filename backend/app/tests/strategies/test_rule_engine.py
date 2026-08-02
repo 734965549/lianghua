@@ -1,11 +1,29 @@
 """规则 DSL 校验与求值测试。"""
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
+from app.schemas.enums import Market
+from app.sdk.models import KlineBar
 from app.strategies.indicators.moving_average import SMAIndicator
 from app.strategies.rule_evaluator import RuleEvaluator
 from app.strategies.rule_schema import DEFAULT_MA_CROSS_DEFINITION
 from app.strategies.rule_validator import RuleValidator
+
+
+def _bar(close: str, idx: int = 0) -> KlineBar:
+    c = Decimal(close)
+    return KlineBar(
+        symbol="600000.SH",
+        market=Market.STOCK,
+        interval="1d",
+        bar_time=datetime(2023, 1, idx + 1, tzinfo=timezone.utc),
+        open=c,
+        high=c,
+        low=c,
+        close=c,
+        volume=Decimal("1"),
+    )
 
 
 def test_validator_accepts_ma_cross():
@@ -32,20 +50,8 @@ def test_validator_rejects_unknown_indicator():
 
 def test_cross_above_truth_table():
     fast = SMAIndicator(period=2, source="close")
-    slow = SMAIndicator(period=2, source="close")
-    # 预热：使 fast 从下方穿越 slow
-    from datetime import datetime, timezone
-    from app.schemas.enums import Market
-    from app.sdk.models import KlineBar
-
-    bars = [
-        KlineBar("600000.SH", Market.STOCK, "1d", datetime(2023, 1, 1, tzinfo=timezone.utc),
-                 Decimal("10"), Decimal("10"), Decimal("10"), Decimal("10"), Decimal("1")),
-        KlineBar("600000.SH", Market.STOCK, "1d", datetime(2023, 1, 2, tzinfo=timezone.utc),
-                 Decimal("10"), Decimal("10"), Decimal("10"), Decimal("10"), Decimal("1")),
-        KlineBar("600000.SH", Market.STOCK, "1d", datetime(2023, 1, 3, tzinfo=timezone.utc),
-                 Decimal("15"), Decimal("15"), Decimal("15"), Decimal("15"), Decimal("1")),
-    ]
+    slow = SMAIndicator(period=3, source="close")
+    bars = [_bar("10", 0), _bar("10", 1), _bar("10", 2), _bar("15", 3)]
     for bar in bars[:-1]:
         fast.update(bar)
         slow.update(bar)

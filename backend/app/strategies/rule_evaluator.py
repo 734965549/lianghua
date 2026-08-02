@@ -16,12 +16,18 @@ class RuleEvaluator:
         bar_fields: dict[str, Decimal],
         formula_values: dict[str, Decimal | None] | None = None,
         formula_prev_values: dict[str, Decimal | None] | None = None,
+        rolling_fields: dict[str, Decimal | None] | None = None,
+        has_position: bool = False,
+        bars_since_signal: int = 0,
     ):
         self._indicators = indicators
         self._parameters = parameters
         self._bar_fields = bar_fields
         self._formula_values = formula_values or {}
         self._formula_prev_values = formula_prev_values or {}
+        self._rolling_fields = rolling_fields or {}
+        self._has_position = has_position
+        self._bars_since_signal = bars_since_signal
 
     def evaluate(self, node: dict | None) -> bool:
         if node is None:
@@ -50,6 +56,22 @@ class RuleEvaluator:
 
     def _eval_condition(self, cond: dict) -> bool:
         op = cond.get("operator")
+        if op == "has_position":
+            return self._has_position
+        if op == "no_position":
+            return not self._has_position
+        if op == "bar_since_gte":
+            bars = cond.get("bars")
+            if not isinstance(bars, int) or bars < 0:
+                bars_spec = cond.get("right")
+                if isinstance(bars_spec, dict) and "constant" in bars_spec:
+                    try:
+                        bars = int(Decimal(str(bars_spec["constant"])))
+                    except (ValueError, TypeError):
+                        return False
+                else:
+                    return False
+            return self._bars_since_signal >= bars
         if op == "rising":
             operand = cond.get("operand") or cond.get("left")
             curr, prev = self._resolve_pair(operand)
@@ -58,6 +80,16 @@ class RuleEvaluator:
             operand = cond.get("operand") or cond.get("left")
             curr, prev = self._resolve_pair(operand)
             return curr is not None and prev is not None and curr < prev
+        if op in {"percent_change_gte", "percent_change_lte"}:
+            operand = cond.get("operand") or cond.get("left")
+            threshold = self._resolve_value(cond.get("right"))
+            curr, prev = self._resolve_pair(operand)
+            if curr is None or prev is None or prev == 0 or threshold is None:
+                return False
+            pct = (curr - prev) / abs(prev) * Decimal("100")
+            if op == "percent_change_gte":
+                return pct >= threshold
+            return pct <= -abs(threshold)
         if op == "between":
             target = cond.get("target") or cond.get("left")
             low = self._resolve_value(cond.get("low"))
@@ -95,6 +127,9 @@ class RuleEvaluator:
             return left == right
         return False
 
+    def _rolling_key(self, field: str, lookback: int) -> str:
+        return f"{field}:{lookback}"
+
     def _resolve_pair(self, operand: dict | None) -> tuple[Decimal | None, Decimal | None]:
         if operand is None:
             return None, None
@@ -111,6 +146,12 @@ class RuleEvaluator:
             return _safe_decimal(ind.get_output(output)), _safe_decimal(ind.get_prev_output(output))
         if "field" in operand:
             field = operand["field"]
+            lookback = operand.get("lookback")
+            if lookback is not None:
+                key = self._rolling_key(field, int(lookback))
+                val = _safe_decimal(self._rolling_fields.get(key))
+                prev_key = f"_prev_{key}"
+                return val, _safe_decimal(self._rolling_fields.get(prev_key))
             curr = _safe_decimal(self._bar_fields.get(field))
             prev = _safe_decimal(self._bar_fields.get(f"_prev_{field}"))
             return curr, prev
@@ -130,6 +171,10 @@ class RuleEvaluator:
             return _safe_decimal(ind.get_output(output))
         if "field" in operand:
             field = operand["field"]
+            lookback = operand.get("lookback")
+            if lookback is not None:
+                key = self._rolling_key(field, int(lookback))
+                return _safe_decimal(self._rolling_fields.get(key))
             if field not in OHLCV_SOURCES:
                 return None
             return _safe_decimal(self._bar_fields.get(field))

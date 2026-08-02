@@ -36,6 +36,12 @@ class StrategyBuilderService:
             "indicators": IndicatorRegistry.catalog(),
             "operators": OPERATOR_CATALOG,
             "fields": ["open", "high", "low", "close", "volume"],
+            "rolling_fields": {
+                "supported": ["high", "low", "close"],
+                "lookback_min": 1,
+                "lookback_max": 500,
+                "example": {"field": "high", "lookback": 20},
+            },
             "formula_operators": FORMULA_OPERATORS,
             "formula_ref_help": FORMULA_REF_HELP,
             "schema_version": 1,

@@ -157,3 +157,183 @@ class KDJIndicator(Indicator):
         self._k = k
         self._d = d
         self._set_outputs({"k": k, "d": d, "j": j})
+
+
+class CCIIndicator(Indicator):
+    """商品通道指数 CCI。"""
+
+    def __init__(self, *, period: int, source: str = "close"):
+        super().__init__(period=period, source=source)
+        self._typical: deque[Decimal] = deque(maxlen=period)
+
+    def update(self, bar: KlineBar) -> None:
+        tp = (_to_decimal(bar.high) + _to_decimal(bar.low) + _to_decimal(bar.close)) / Decimal("3")
+        self._typical.append(tp)
+        if len(self._typical) < self.period:
+            self._set_value(None)
+            return
+        mean = sum(self._typical) / Decimal(self.period)
+        mean_dev = sum(abs(v - mean) for v in self._typical) / Decimal(self.period)
+        if mean_dev == 0:
+            self._set_value(Decimal("0"))
+            return
+        self._set_value((tp - mean) / (Decimal("0.015") * mean_dev))
+
+
+class WilliamsRIndicator(Indicator):
+    """威廉指标 %R。"""
+
+    def __init__(self, *, period: int, source: str = "close"):
+        super().__init__(period=period, source=source)
+        self._highs: deque[Decimal] = deque(maxlen=period)
+        self._lows: deque[Decimal] = deque(maxlen=period)
+
+    def update(self, bar: KlineBar) -> None:
+        self._highs.append(_to_decimal(bar.high))
+        self._lows.append(_to_decimal(bar.low))
+        close = _to_decimal(bar.close)
+        if len(self._highs) < self.period:
+            self._set_value(None)
+            return
+        highest = max(self._highs)
+        lowest = min(self._lows)
+        if highest == lowest:
+            self._set_value(Decimal("-50"))
+            return
+        wr = (highest - close) / (highest - lowest) * Decimal("-100")
+        self._set_value(wr)
+
+
+class MFIIndicator(Indicator):
+    """资金流量指数 MFI。"""
+
+    def __init__(self, *, period: int, source: str = "close"):
+        super().__init__(period=period, source=source)
+        self._prev_tp: Decimal | None = None
+        self._pos_flow: deque[Decimal] = deque(maxlen=period)
+        self._neg_flow: deque[Decimal] = deque(maxlen=period)
+
+    def update(self, bar: KlineBar) -> None:
+        tp = (_to_decimal(bar.high) + _to_decimal(bar.low) + _to_decimal(bar.close)) / Decimal("3")
+        raw_flow = tp * _to_decimal(bar.volume)
+        if self._prev_tp is None:
+            self._prev_tp = tp
+            self._set_value(None)
+            return
+
+        if tp > self._prev_tp:
+            self._pos_flow.append(raw_flow)
+            self._neg_flow.append(Decimal("0"))
+        elif tp < self._prev_tp:
+            self._pos_flow.append(Decimal("0"))
+            self._neg_flow.append(raw_flow)
+        else:
+            self._pos_flow.append(Decimal("0"))
+            self._neg_flow.append(Decimal("0"))
+        self._prev_tp = tp
+
+        if len(self._pos_flow) < self.period:
+            self._set_value(None)
+            return
+
+        pos = sum(self._pos_flow)
+        neg = sum(self._neg_flow)
+        if neg == 0:
+            self._set_value(Decimal("100"))
+            return
+        mfr = pos / neg
+        self._set_value(Decimal("100") - (Decimal("100") / (Decimal("1") + mfr)))
+
+
+class StochRSIIndicator(Indicator):
+    """随机 RSI。"""
+
+    output_names = ("k", "d")
+
+    def __init__(
+        self,
+        *,
+        period: int,
+        source: str = "close",
+        stoch_period: int = 14,
+        k_smooth: int = 3,
+        d_smooth: int = 3,
+    ):
+        super().__init__(period=period, source=source)
+        self.stoch_period = stoch_period
+        self.k_smooth = k_smooth
+        self.d_smooth = d_smooth
+        self._rsi = RSIIndicator(period=period, source=source)
+        self._rsi_window: deque[Decimal] = deque(maxlen=stoch_period)
+        self._k_window: deque[Decimal] = deque(maxlen=k_smooth)
+        self._d_window: deque[Decimal] = deque(maxlen=d_smooth)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.period + self.stoch_period + self.k_smooth + self.d_smooth
+
+    def update(self, bar: KlineBar) -> None:
+        self._rsi.update(bar)
+        if not self._rsi.ready or self._rsi.value is None:
+            self._set_outputs({"k": None, "d": None})
+            return
+
+        self._rsi_window.append(self._rsi.value)
+        if len(self._rsi_window) < self.stoch_period:
+            self._set_outputs({"k": None, "d": None})
+            return
+
+        rsi_vals = list(self._rsi_window)
+        lowest = min(rsi_vals)
+        highest = max(rsi_vals)
+        if highest == lowest:
+            stoch = Decimal("50")
+        else:
+            stoch = (self._rsi.value - lowest) / (highest - lowest) * Decimal("100")
+
+        self._k_window.append(stoch)
+        if len(self._k_window) < self.k_smooth:
+            self._set_outputs({"k": None, "d": None})
+            return
+        k = sum(self._k_window) / Decimal(self.k_smooth)
+        self._d_window.append(k)
+        if len(self._d_window) < self.d_smooth:
+            self._set_outputs({"k": k, "d": None})
+            return
+        d = sum(self._d_window) / Decimal(self.d_smooth)
+        self._set_outputs({"k": k, "d": d})
+
+
+class AOIndicator(Indicator):
+    """Awesome Oscillator 动量震荡。"""
+
+    def __init__(
+        self,
+        *,
+        period: int | None = None,
+        source: str = "close",
+        fast: int = 5,
+        slow: int = 34,
+    ):
+        super().__init__(period=period, source=source)
+        self.fast_period = fast
+        self.slow_period = slow
+        self._median_window_fast: deque[Decimal] = deque(maxlen=fast)
+        self._median_window_slow: deque[Decimal] = deque(maxlen=slow)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.slow_period + 1
+
+    def update(self, bar: KlineBar) -> None:
+        median = (_to_decimal(bar.high) + _to_decimal(bar.low)) / Decimal("2")
+        self._median_window_fast.append(median)
+        self._median_window_slow.append(median)
+
+        if len(self._median_window_fast) < self.fast_period or len(self._median_window_slow) < self.slow_period:
+            self._set_value(None)
+            return
+
+        fast_sma = sum(self._median_window_fast) / Decimal(self.fast_period)
+        slow_sma = sum(self._median_window_slow) / Decimal(self.slow_period)
+        self._set_value(fast_sma - slow_sma)

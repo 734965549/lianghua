@@ -58,15 +58,45 @@ flowchart LR
 
 ### 指标（indicators）
 
-| type | 输出 | 说明 |
-| --- | --- | --- |
-| sma / ema | value | 移动平均，需 period |
-| rsi | value | 相对强弱，需 period |
-| macd | value, signal, histogram | 不需 period，用 params: fast/slow/signal |
-| bollinger | value, upper, lower | 需 period + params.std_dev |
-| atr / roc | value | 需 period |
-| kdj | k, d, j | 需 period |
-| volume_sma | value | 数据源通常为 volume |
+完整目录通过 `GET /api/indicator-catalog` 获取（26 种）。按类别：
+
+**趋势 / 均线**
+
+| type | 输出 | period | 附加 params |
+| --- | --- | --- | --- |
+| sma / ema / wma / hma | value | 需要 | — |
+| adx | value, plus_di, minus_di | 需要 | — |
+| parabolic_sar | value | 不需要 | step, max_step |
+| supertrend | value, direction | 需要 | multiplier |
+| ichimoku | tenkan, kijun, senkou_a, senkou_b | 不需要 | tenkan, kijun, senkou_b |
+
+**动量**
+
+| type | 输出 | period | 附加 params |
+| --- | --- | --- | --- |
+| rsi / roc / cci / williams_r / mfi | value | 需要 | — |
+| macd | value, signal, histogram | 不需要 | fast, slow, signal |
+| kdj | k, d, j | 需要 | — |
+| stoch_rsi | k, d | 需要 | stoch_period, k_smooth, d_smooth |
+| ao | value | 不需要 | fast, slow |
+
+**波动率**
+
+| type | 输出 | period | 附加 params |
+| --- | --- | --- | --- |
+| bollinger | value, upper, lower, width, pct_b | 需要 | std_dev |
+| atr | value | 需要 | — |
+| keltner | value, upper, lower | 需要 | multiplier |
+| donchian | value, upper, lower | 需要 | — |
+
+**成交量**
+
+| type | 输出 | period | 附加 params |
+| --- | --- | --- | --- |
+| volume_sma / vwap / cmf | value | 需要 | — |
+| obv / ad_line | value | 不需要 | — |
+
+指标可指定 `interval` 使用更高周期 K 线（如 5m 策略引用 1d 均线），详见 `RuleStrategy._refresh_htf_indicators`。
 
 ### 操作符（operator）
 
@@ -76,6 +106,9 @@ flowchart LR
 | cross_above / cross_below | 上穿 / 下穿 | left, right |
 | between | 介于 | target, low, high |
 | rising / falling | 上升 / 下降 | operand |
+| percent_change_gte / percent_change_lte | 涨幅/跌幅 ≥ 阈值% | operand, right |
+| has_position / no_position | 有/无持仓 | 无 |
+| bar_since_gte | 距上次信号 ≥ N 根 K 线 | bars（整数） |
 
 ### 操作数（operand）
 
@@ -83,9 +116,12 @@ flowchart LR
 | --- | --- | --- |
 | 指标 | `{ "indicator": "id", "output": "value" }` | RSI 值 |
 | 价格字段 | `{ "field": "close" }` | 收盘价 |
+| 滚动极值 | `{ "field": "high", "lookback": 20 }` | 最近 20 根最高价 |
 | 常量 | `{ "constant": "30" }` | 阈值 |
 | 参数 | `{ "parameter": "fast" }` | 可调参数 |
 | 公式 | `{ "formula": "ma_diff" }` | 自定义因子 |
+
+滚动 lookback 支持 `high` / `low` / `close` 字段，范围 1–500。
 
 ### 规则树
 
@@ -108,12 +144,12 @@ flowchart LR
 
 | 限制 | 值 |
 | --- | --- |
-| 指标数量 | ≤ 20 |
+| 指标数量 | ≤ 30 |
 | 条件数量 | ≤ 50 |
 | 规则嵌套深度 | ≤ 5 |
 | 公式数量 | ≤ 10 |
 | 公式长度 | ≤ 200 字符 |
-| period | 1–500 |
+| period / lookback | 1–500 |
 | 固定标的 | ≤ 20 |
 | max_concurrent | 1–10 |
 

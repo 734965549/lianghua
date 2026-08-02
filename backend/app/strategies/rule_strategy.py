@@ -1,5 +1,6 @@
 from decimal import Decimal, ROUND_DOWN
 from typing import Any
+from collections import deque
 
 from app.schemas.enums import OrderSide, PriceType, SignalAction
 from app.sdk.models import KlineBar, QuoteSnapshot
@@ -7,7 +8,7 @@ from app.strategies.base import Strategy
 from app.strategies.formula_evaluator import FormulaEngine
 from app.strategies.indicators.base import Indicator, create_indicator_from_def
 from app.strategies.rule_evaluator import RuleEvaluator
-from app.strategies.rule_schema import DEFAULT_SYMBOLS_CONFIG
+from app.strategies.rule_schema import DEFAULT_SYMBOLS_CONFIG, INDICATOR_TYPES_NO_PERIOD
 from app.strategies.rule_validator import resolve_parameters
 
 
@@ -29,13 +30,41 @@ def _resolve_operand_decimal(spec: Any, parameters: dict) -> Decimal:
 
 def _indicator_warmup(ind_def: dict, parameters: dict) -> int:
     ind_type = ind_def.get("type")
+    params = ind_def.get("params", {})
     if ind_type == "macd":
-        params = ind_def.get("params", {})
         slow = int(params.get("slow", 26))
         signal = int(params.get("signal", 9))
         return slow + signal + 1
+    if ind_type == "ao":
+        return int(params.get("slow", 34)) + 1
+    if ind_type == "ichimoku":
+        return int(params.get("senkou_b", 52)) + 1
+    if ind_type == "stoch_rsi":
+        period = _resolve_period(ind_def["period"], parameters)
+        stoch = int(params.get("stoch_period", 14))
+        k = int(params.get("k_smooth", 3))
+        d = int(params.get("d_smooth", 3))
+        return period + stoch + k + d
+    if ind_type in {"obv", "ad_line", "parabolic_sar"}:
+        return 3
+    if ind_type == "adx":
+        period = _resolve_period(ind_def["period"], parameters)
+        return period * 2
+    if ind_type == "hma":
+        period = _resolve_period(ind_def["period"], parameters)
+        sqrt_p = max(int(period**0.5), 1)
+        return period + sqrt_p + 1
+    if ind_type in INDICATOR_TYPES_NO_PERIOD:
+        return 2
     period = _resolve_period(ind_def["period"], parameters)
     return period + 1
+
+
+def _indicator_interval(ind_def: dict, strategy_interval: str) -> str:
+    raw = ind_def.get("interval")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return strategy_interval
 
 
 class RuleStrategy(Strategy):
@@ -76,6 +105,17 @@ class RuleStrategy(Strategy):
         self._fixed_symbols = set(sym_cfg.get("list") or [])
         self._max_concurrent = int(sym_cfg.get("max_concurrent", 5))
 
+        self._native_indicator_defs = [
+            ind_def
+            for ind_def in definition.get("indicators", [])
+            if _indicator_interval(ind_def, self._interval) == self._interval
+        ]
+        self._htf_indicator_defs = [
+            ind_def
+            for ind_def in definition.get("indicators", [])
+            if _indicator_interval(ind_def, self._interval) != self._interval
+        ]
+
         self._indicators_by_symbol: dict[str, dict[str, Indicator]] = {}
         self._prev_bar_fields: dict[str, dict[str, Decimal]] = {}
         self._formula_engines: dict[str, FormulaEngine] = {}
@@ -85,16 +125,91 @@ class RuleStrategy(Strategy):
         self._entry_prices: dict[str, Decimal] = {}
         self._cooldown_remaining: dict[str, int] = {}
         self._last_signal_bar: dict[str, str] = {}
+        self._htf_last_bar: dict[tuple[str, str], str] = {}
+        self._rolling_windows: dict[str, dict[str, deque[Decimal]]] = {}
+        self._rolling_values: dict[str, dict[str, Decimal | None]] = {}
+        self._bars_since_signal: dict[str, int] = {}
+        self._required_lookbacks: set[tuple[str, int]] = self._collect_lookbacks(definition)
         self._warmup = self._compute_warmup()
 
     def _compute_warmup(self) -> int:
+        """主周期预热根数：仅统计与策略 interval 相同的指标。"""
         max_warmup = 1
-        for ind_def in self.definition.get("indicators", []):
+        for ind_def in self._native_indicator_defs:
             try:
                 max_warmup = max(max_warmup, _indicator_warmup(ind_def, self.resolved_params))
             except (KeyError, ValueError, TypeError):
                 continue
+        for _, lookback in self._required_lookbacks:
+            max_warmup = max(max_warmup, lookback + 1)
         return max_warmup
+
+    def _collect_lookbacks(self, definition: dict) -> set[tuple[str, int]]:
+        lookbacks: set[tuple[str, int]] = set()
+
+        def walk(node: Any) -> None:
+            if not isinstance(node, dict):
+                return
+            if "all" in node:
+                for item in node["all"]:
+                    walk(item)
+            elif "any" in node:
+                for item in node["any"]:
+                    walk(item)
+            elif "not" in node:
+                walk(node["not"])
+            elif "operator" in node:
+                for key in ("left", "right", "operand", "target", "low", "high"):
+                    op = node.get(key)
+                    if isinstance(op, dict) and "field" in op and "lookback" in op:
+                        lb = op.get("lookback")
+                        if isinstance(lb, int) and lb > 0:
+                            lookbacks.add((op["field"], lb))
+
+        for rule_name in ("entry_rule", "exit_rule"):
+            rule = definition.get(rule_name)
+            if rule:
+                walk(rule)
+        return lookbacks
+
+    def _update_rolling_fields(self, symbol: str, bar: KlineBar) -> dict[str, Decimal | None]:
+        if symbol not in self._rolling_windows:
+            self._rolling_windows[symbol] = {}
+            self._rolling_values[symbol] = {}
+
+        fields = {
+            "high": Decimal(str(bar.high)),
+            "low": Decimal(str(bar.low)),
+            "close": Decimal(str(bar.close)),
+        }
+        prev_vals = dict(self._rolling_values.get(symbol, {}))
+        out: dict[str, Decimal | None] = {}
+
+        for field, lookback in self._required_lookbacks:
+            key = f"{field}:{lookback}"
+            prev_key = f"_prev_{key}"
+            if key not in self._rolling_windows[symbol]:
+                self._rolling_windows[symbol][key] = deque(maxlen=lookback)
+
+            window = self._rolling_windows[symbol][key]
+            val = fields.get(field)
+            if val is not None:
+                window.append(val)
+
+            if len(window) < lookback:
+                out[key] = None
+                out[prev_key] = prev_vals.get(key)
+            else:
+                if field == "high":
+                    out[key] = max(window)
+                elif field == "low":
+                    out[key] = min(window)
+                else:
+                    out[key] = window[-1]
+                out[prev_key] = prev_vals.get(key)
+
+        self._rolling_values[symbol] = out
+        return out
 
     @property
     def warmup_bars(self) -> int:
@@ -135,6 +250,7 @@ class RuleStrategy(Strategy):
         self._positions[symbol] = Decimal("0")
         self._entry_prices[symbol] = Decimal("0")
         self._cooldown_remaining[symbol] = 0
+        self._bars_since_signal[symbol] = 999
 
     def _update_indicators(self, bar: KlineBar) -> dict[str, Decimal]:
         self._ensure_symbol(bar.symbol)
@@ -151,8 +267,10 @@ class RuleStrategy(Strategy):
             bar_fields[f"_prev_{key}"] = val
 
         indicators = self._indicators_by_symbol[bar.symbol]
-        for ind in indicators.values():
-            ind.update(bar)
+        for ind_def in self._native_indicator_defs:
+            indicators[ind_def["id"]].update(bar)
+        self._refresh_htf_indicators(bar.symbol)
+        rolling_fields = self._update_rolling_fields(bar.symbol, bar)
 
         engine = self._formula_engines[bar.symbol]
         engine._bar_fields = bar_fields
@@ -163,6 +281,35 @@ class RuleStrategy(Strategy):
 
         self._prev_bar_fields[bar.symbol] = fields
         return bar_fields
+
+    def _refresh_htf_indicators(self, symbol: str) -> None:
+        """用更高周期 K 线刷新方向类指标（如日线均线）。"""
+        if self.context is None or not self._htf_indicator_defs:
+            return
+
+        indicators = self._indicators_by_symbol[symbol]
+        for ind_def in self._htf_indicator_defs:
+            ind_id = ind_def["id"]
+            interval = _indicator_interval(ind_def, self._interval)
+            try:
+                limit = _indicator_warmup(ind_def, self.resolved_params)
+            except (KeyError, ValueError, TypeError):
+                continue
+
+            bars = self.context.get_klines(symbol, interval, limit)
+            if not bars:
+                continue
+
+            last_key = bars[-1].bar_time.isoformat()
+            cache_key = (symbol, ind_id)
+            if self._htf_last_bar.get(cache_key) == last_key:
+                continue
+
+            rebuilt = create_indicator_from_def(ind_def, self.resolved_params)
+            for htf_bar in bars:
+                rebuilt.update(htf_bar)
+            indicators[ind_id] = rebuilt
+            self._htf_last_bar[cache_key] = last_key
 
     def _sync_position(self, symbol: str) -> None:
         if self.context is None:
@@ -232,6 +379,7 @@ class RuleStrategy(Strategy):
         self._entry_prices[bar.symbol] = Decimal("0")
         self._cooldown_remaining[bar.symbol] = self._cooldown_bars
         self._last_signal_bar[bar.symbol] = bar_key
+        self._bars_since_signal[bar.symbol] = 0
         return [sid]
 
     def on_start(self, context) -> None:
@@ -269,6 +417,7 @@ class RuleStrategy(Strategy):
             return []
 
         bar_fields = self._update_indicators(bar)
+        rolling_fields = self._rolling_values.get(bar.symbol, {})
         self._sync_position(bar.symbol)
 
         bar_key = bar.bar_time.isoformat()
@@ -276,6 +425,7 @@ class RuleStrategy(Strategy):
             return []
 
         has_position = self._positions.get(bar.symbol, Decimal("0")) > 0
+        self._bars_since_signal[bar.symbol] = self._bars_since_signal.get(bar.symbol, 999) + 1
 
         if has_position:
             risk_reason = self._check_risk_exit(bar.symbol, bar)
@@ -293,6 +443,9 @@ class RuleStrategy(Strategy):
             bar_fields=bar_fields,
             formula_values=self._formula_values.get(bar.symbol, {}),
             formula_prev_values=self._formula_prev_values.get(bar.symbol, {}),
+            rolling_fields=rolling_fields,
+            has_position=has_position,
+            bars_since_signal=self._bars_since_signal.get(bar.symbol, 999),
         )
 
         signals: list[str] = []
@@ -320,6 +473,7 @@ class RuleStrategy(Strategy):
                 self._entry_prices[bar.symbol] = bar.close
                 self._cooldown_remaining[bar.symbol] = self._cooldown_bars
                 self._last_signal_bar[bar.symbol] = bar_key
+                self._bars_since_signal[bar.symbol] = 0
 
         elif has_position and self._exit_rule:
             if evaluator.evaluate(self._exit_rule):

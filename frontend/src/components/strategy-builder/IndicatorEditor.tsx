@@ -92,10 +92,21 @@ export default function IndicatorEditor({ definition, catalog, onChange }: Props
                       patch.period = undefined;
                       if (val === "macd") {
                         patch.params = { fast: 12, slow: 26, signal: 9 };
+                      } else if (val === "ao") {
+                        patch.params = { fast: 5, slow: 34 };
+                      } else if (val === "ichimoku") {
+                        patch.params = { tenkan: 9, kijun: 26, senkou_b: 52 };
+                      } else if (val === "parabolic_sar") {
+                        patch.params = { step: "0.02", max_step: "0.2" };
+                      } else {
+                        patch.params = undefined;
                       }
                     } else {
                       patch.period = 20;
-                      patch.params = val === "bollinger" ? { std_dev: "2" } : undefined;
+                      if (val === "bollinger") patch.params = { std_dev: "2" };
+                      else if (val === "keltner" || val === "supertrend") patch.params = { multiplier: val === "supertrend" ? "3" : "2" };
+                      else if (val === "stoch_rsi") patch.params = { stoch_period: 14, k_smooth: 3, d_smooth: 3 };
+                      else patch.params = undefined;
                     }
                     if (m?.sources?.length === 1) {
                       patch.source = m.sources[0];
@@ -161,16 +172,62 @@ export default function IndicatorEditor({ definition, catalog, onChange }: Props
                   </div>
                 );
               }
-              if (type === "bollinger") {
+              if (type === "bollinger" || type === "keltner" || type === "supertrend") {
+                const key = type === "bollinger" ? "std_dev" : "multiplier";
+                const def = type === "bollinger" ? 2 : type === "supertrend" ? 3 : 2;
                 return (
                   <InputNumber
                     size="small"
                     min={0.1}
-                    max={5}
+                    max={10}
                     step={0.1}
-                    value={Number(params.std_dev ?? 2)}
-                    onChange={(n) => updateOne(idx, { params: { std_dev: String(n ?? 2) } })}
+                    value={Number(params[key] ?? def)}
+                    onChange={(n) => updateOne(idx, { params: { ...params, [key]: String(n ?? def) } })}
                   />
+                );
+              }
+              if (type === "stoch_rsi") {
+                return (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <InputNumber size="small" placeholder="stoch" value={Number(params.stoch_period ?? 14)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, stoch_period: n ?? 14 } })} />
+                    <InputNumber size="small" placeholder="k" value={Number(params.k_smooth ?? 3)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, k_smooth: n ?? 3 } })} />
+                    <InputNumber size="small" placeholder="d" value={Number(params.d_smooth ?? 3)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, d_smooth: n ?? 3 } })} />
+                  </div>
+                );
+              }
+              if (type === "ichimoku") {
+                return (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <InputNumber size="small" placeholder="tenkan" value={Number(params.tenkan ?? 9)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, tenkan: n ?? 9 } })} />
+                    <InputNumber size="small" placeholder="kijun" value={Number(params.kijun ?? 26)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, kijun: n ?? 26 } })} />
+                    <InputNumber size="small" placeholder="senkou" value={Number(params.senkou_b ?? 52)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, senkou_b: n ?? 52 } })} />
+                  </div>
+                );
+              }
+              if (type === "ao") {
+                return (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <InputNumber size="small" placeholder="fast" value={Number(params.fast ?? 5)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, fast: n ?? 5 } })} />
+                    <InputNumber size="small" placeholder="slow" value={Number(params.slow ?? 34)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, slow: n ?? 34 } })} />
+                  </div>
+                );
+              }
+              if (type === "parabolic_sar") {
+                return (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <InputNumber size="small" step={0.01} placeholder="step" value={Number(params.step ?? 0.02)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, step: String(n ?? 0.02) } })} />
+                    <InputNumber size="small" step={0.05} placeholder="max" value={Number(params.max_step ?? 0.2)}
+                      onChange={(n) => updateOne(idx, { params: { ...params, max_step: String(n ?? 0.2) } })} />
+                  </div>
                 );
               }
               return "-";

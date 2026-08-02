@@ -16,8 +16,8 @@ def test_max_indicators_limit():
         **DEFAULT_MA_CROSS_DEFINITION,
         "indicators": [
             {"id": f"i{n}", "type": "sma", "source": "close", "period": 5}
-            for n in range(21)
+            for n in range(31)
         ],
     }
     errors = RuleValidator().validate(definition)
-    assert any("20" in e for e in errors)
+    assert any("30" in e for e in errors)

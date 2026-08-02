@@ -4,6 +4,7 @@ export type Operand = {
   indicator?: string;
   output?: string;
   field?: string;
+  lookback?: number;
   constant?: string | number;
   parameter?: string;
   formula?: string;
@@ -87,13 +88,28 @@ export default function OperandEditor({
         </>
       )}
       {kind === "field" && (
-        <Select
-          size="small"
-          style={{ width: 100 }}
-          value={value.field ?? "close"}
-          onChange={(v) => onChange({ field: v })}
-          options={["open", "high", "low", "close", "volume"].map((f) => ({ value: f, label: f }))}
-        />
+        <>
+          <Select
+            size="small"
+            style={{ width: 100 }}
+            value={value.field ?? "close"}
+            onChange={(v) => onChange({ ...value, field: v })}
+            options={["open", "high", "low", "close", "volume"].map((f) => ({ value: f, label: f }))}
+          />
+          <InputNumber
+            size="small"
+            min={1}
+            max={500}
+            placeholder="lookback"
+            value={value.lookback}
+            onChange={(v) => {
+              const next = { ...value, field: value.field ?? "close" };
+              if (v && v > 0) next.lookback = v;
+              else delete next.lookback;
+              onChange(next);
+            }}
+          />
+        </>
       )}
       {kind === "constant" && (
         <InputNumber

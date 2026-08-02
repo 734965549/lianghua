@@ -11,11 +11,13 @@ from app.strategies.rule_schema import (
     MAX_FORMULAS,
     MAX_FORMULA_LENGTH,
     MAX_INDICATORS,
+    MAX_LOOKBACK,
     MAX_NEST_DEPTH,
     MAX_PERIOD,
     MAX_SYMBOLS,
     MAX_CONCURRENT_POSITIONS,
     OHLCV_SOURCES,
+    ROLLING_FIELD_SOURCES,
     SCHEMA_VERSION,
     ALL_OPERATORS,
 )
@@ -255,6 +257,12 @@ class RuleValidator:
         if source not in OHLCV_SOURCES:
             errors.append(f"indicators[{idx}].source 无效: {source}")
 
+        ind_interval = ind.get("interval")
+        if ind_interval is not None and (
+            not isinstance(ind_interval, str) or not ind_interval.strip()
+        ):
+            errors.append(f"indicators[{idx}].interval 必须是非空字符串")
+
         if ind_type not in INDICATOR_TYPES_NO_PERIOD:
             period_spec = ind.get("period")
             if period_spec is None:
@@ -411,13 +419,39 @@ class RuleValidator:
             errors.append(f"不支持的操作符: {op}")
             return errors
 
-        if op in {"rising", "falling"}:
+        if op in {"has_position", "no_position"}:
+            return errors
+
+        if op == "bar_since_gte":
+            bars = cond.get("bars")
+            if bars is None:
+                right = cond.get("right")
+                if right is None:
+                    errors.append("bar_since_gte 需要 bars 或 right 字段")
+                else:
+                    errors.extend(
+                        self._validate_operand(
+                            right, indicator_ids, indicator_outputs, formula_ids, parameters, "right"
+                        )
+                    )
+            elif not isinstance(bars, int) or bars < 0 or bars > 500:
+                errors.append("bar_since_gte.bars 必须是 0-500 的整数")
+            return errors
+
+        if op in {"rising", "falling", "percent_change_gte", "percent_change_lte"}:
             operand = cond.get("operand") or cond.get("left")
             errors.extend(
                 self._validate_operand(
                     operand, indicator_ids, indicator_outputs, formula_ids, parameters, "operand"
                 )
             )
+            if op in {"percent_change_gte", "percent_change_lte"}:
+                right = cond.get("right")
+                errors.extend(
+                    self._validate_operand(
+                        right, indicator_ids, indicator_outputs, formula_ids, parameters, "right"
+                    )
+                )
             return errors
 
         if op == "between":
@@ -486,8 +520,15 @@ class RuleValidator:
             return []
 
         if "field" in operand:
-            if operand["field"] not in OHLCV_SOURCES:
-                return [f"{path} 字段无效: {operand['field']}"]
+            field = operand["field"]
+            if field not in OHLCV_SOURCES:
+                return [f"{path} 字段无效: {field}"]
+            lookback = operand.get("lookback")
+            if lookback is not None:
+                if field not in ROLLING_FIELD_SOURCES:
+                    return [f"{path} 字段 {field} 不支持 lookback"]
+                if not isinstance(lookback, int) or lookback < 1 or lookback > MAX_LOOKBACK:
+                    return [f"{path} lookback 必须是 1-{MAX_LOOKBACK} 的整数"]
             return []
 
         if "constant" in operand:

@@ -90,14 +90,23 @@ definition 必须包含：
 - symbols: {{ mode: "runtime"|"fixed", list: [], max_concurrent: 5 }}
 - risk: {{ stop_loss_pct, take_profit_pct, max_position_pct }}（字符串数字）
 
-指标 type：sma, ema, rsi, macd, bollinger, atr, roc, volume_sma, kdj
-指标输出：sma/ema/rsi/atr/roc/volume_sma→value；macd→value/signal/histogram；bollinger→value/upper/lower；kdj→k/d/j
+指标 type（完整列表）：
+趋势/均线: sma, ema, wma, hma, adx, parabolic_sar, supertrend, ichimoku
+动量: rsi, macd, roc, kdj, cci, williams_r, mfi, stoch_rsi, ao
+波动率: bollinger, atr, keltner, donchian
+成交量: volume_sma, obv, vwap, cmf, ad_line
+
+指标输出：
+- 单值 value: sma/ema/wma/hma/rsi/atr/roc/volume_sma/obv/vwap/cmf/ad_line/cci/williams_r/mfi/ao/parabolic_sar
+- macd→value/signal/histogram；kdj→k/d/j；stoch_rsi→k/d
+- bollinger→value/upper/lower/width/pct_b；keltner/donchian→value/upper/lower
+- adx→value/plus_di/minus_di；supertrend→value/direction；ichimoku→tenkan/kijun/senkou_a/senkou_b
 
 【指标 period 规则 — 必须严格遵守】
-- 需要周期的指标（sma/ema/rsi/bollinger/atr/roc/volume_sma/kdj）必须在指标对象顶层写 period
-- period 只能是整数（如 20）或参数引用 {{ "parameter": "参数名" }}
-- 禁止把 period 放进 params；params 仅用于 macd 的 fast/slow/signal 和 bollinger 的 std_dev
-- macd 不需要顶层 period，示例：{{ "id": "macd_1", "type": "macd", "source": "close", "params": {{ "fast": 12, "slow": 26, "signal": 9 }} }}
+- 需要周期的指标必须在指标对象顶层写 period（整数或 {{ "parameter": "名" }}）
+- 不需要 period 的指标：macd, ao, ichimoku, parabolic_sar, obv, ad_line
+- params 用于 macd(fast/slow/signal)、bollinger(std_dev)、keltner/supertrend(multiplier)、
+  stoch_rsi(stoch_period/k_smooth/d_smooth)、ichimoku(tenkan/kijun/senkou_b)、parabolic_sar(step/max_step)
 
 【execution 规则 — 必须严格遵守】
 - quantity 与 quantity_pct 二选一，值必须是操作数对象，禁止裸数字
@@ -110,10 +119,13 @@ definition 必须包含：
 - 穿越: cross_above, cross_below
 - 区间: between（target/low/high）
 - 趋势: rising, falling（operand）
+- 变化: percent_change_gte, percent_change_lte（operand + right 阈值%）
+- 状态: has_position, no_position（无操作数）；bar_since_gte（bars 整数或 right 常量）
 
 操作数 operand：
 - 指标: {{ "indicator": "id", "output": "value" }}
 - 价格: {{ "field": "open|high|low|close|volume" }}
+- 滚动极值: {{ "field": "high|low|close", "lookback": 20 }}（最近 N 根 K 线最高/最低/收盘）
 - 常量: {{ "constant": "30" }}
 - 参数: {{ "parameter": "name" }}
 - 公式: {{ "formula": "id" }}
@@ -122,7 +134,7 @@ definition 必须包含：
 
 公式 expression：+ - * / ( )，引用 @指标.输出 $close #参数 &公式id
 
-约束：指标≤20，条件≤50，嵌套≤5，period 1-500，execution 必须指定 quantity 或 quantity_pct。
+约束：指标≤30，条件≤50，嵌套≤5，period 1-500，execution 必须指定 quantity 或 quantity_pct。
 只输出 JSON，不要用 markdown 代码块包裹。
 
 完整合法示例（请严格参照字段形状）：
