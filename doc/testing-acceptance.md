@@ -118,6 +118,8 @@
 | 10 | 真实 SDK 小额人工验证 | 待 SDK | 是 |
 | 11 | AI 复盘可生成且无下单指令 | 是 | 是 |
 | 12 | 历史交易筛选/CSV 导出 | 是 | 是 |
+| 13 | AI 自然语言生成策略 definition 且校验通过 | 是（需配置 AI） | 可选 |
+| 14 | 规则策略构建→发布→回测 | 是 | 是 |
 
 脚本：
 
@@ -448,5 +450,7 @@ def test_restart_preserves_breaker_and_unknown_orders(test_db):
 | 14 | 生成 AI 报告 | 报告含指标，无下单指令 |
 | 15 | 历史交易筛选/导出 CSV | 列表与 BOM CSV 正常 |
 | 16 | 交易链路抽屉 | 信号→风控→委托→成交→审计 |
+| 17 | 策略构建器 AI 生成 | 自然语言→definition 填入表单，校验后可保存 |
+| 18 | 发布规则策略并回测 | 回测任务正常完成 |
 
-阶段 7 自动化补充：`test_metrics_service.py`（FIFO 盈亏/胜率）、`test_ai_report_service.py`（指令词过滤与免责声明）。
+阶段 7 自动化补充：`test_metrics_service.py`（FIFO 盈亏/胜率）、`test_ai_report_service.py`（指令词过滤与免责声明）、`test_ai_strategy_service.py`（JSON 解析与 DSL 校验）。

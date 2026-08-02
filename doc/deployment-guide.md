@@ -30,7 +30,7 @@
 | `LIANGHUA_STOCK_ACCOUNT` | 股票账号标识 |
 | `LIANGHUA_FUTURES_ACCOUNT` | 期货账号标识 |
 | `LIANGHUA_CONFIG_KEY` | 本地配置加密密钥 |
-| `LIANGHUA_AI_PROVIDER` | AI 服务提供方，可为空 |
+| `LIANGHUA_AI_PROVIDER` | AI 服务提供方；复盘未配置降级模板，策略生成未配置则报错 |
 | `LIANGHUA_AI_API_KEY` | AI 密钥，可为空 |
 
 ## 开发启动流程
@@ -131,7 +131,9 @@ LIANGHUA_FUTURES_ACCOUNT=
 # 敏感字段加密密钥，32 字节随机串的 base64，生成方式见下文
 LIANGHUA_CONFIG_KEY=
 
-# ===== AI（可选，留空走规则化模板）=====
+# ===== AI（可选）=====
+# 复盘报告：未配置时降级为规则化模板
+# 策略生成：未配置时 POST /api/ai/strategies/generate 返回 AI_STRATEGY_NOT_CONFIGURED
 LIANGHUA_AI_PROVIDER=
 LIANGHUA_AI_API_KEY=
 LIANGHUA_AI_BASE_URL=

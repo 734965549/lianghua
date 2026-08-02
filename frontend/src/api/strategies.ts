@@ -153,3 +153,23 @@ export function getStrategyVersion(strategyId: string, version: number) {
 export function getStrategy(strategyId: string) {
   return api.get<StrategyItem>(`/strategies/${strategyId}`);
 }
+
+export interface AiStrategyGenerateResult {
+  /** 建议的策略名称 */
+  name: string;
+  /** 建议的策略描述 */
+  description: string;
+  /** 完整规则 DSL，可直接写入 StrategyBuilder */
+  definition: StrategyDefinition;
+  validation: { valid: boolean; errors: string[] };
+  model_name: string;
+}
+
+/** AI 自然语言生成策略 definition（不自动创建策略，需用户保存） */
+export function generateStrategyFromPrompt(data: {
+  prompt: string;
+  market?: string;
+  interval?: string;
+}) {
+  return api.post<AiStrategyGenerateResult>("/ai/strategies/generate", data);
+}

@@ -14,6 +14,7 @@ def test_indicator_catalog_includes_macd():
     assert "atr" in types
     assert "roc" in types
     assert "volume_sma" in types
+    assert "kdj" in types
 
 
 def test_macd_definition_validate():
@@ -90,3 +91,50 @@ def test_create_macd_from_def():
         {},
     )
     assert ind.warmup_bars >= 5
+
+
+def test_kdj_definition_validate():
+    definition = {
+        **DEFAULT_MA_CROSS_DEFINITION,
+        "indicators": [
+            {
+                "id": "kdj_main",
+                "type": "kdj",
+                "source": "close",
+                "period": 9,
+            }
+        ],
+        "entry_rule": {
+            "all": [
+                {
+                    "operator": "cross_above",
+                    "left": {"indicator": "kdj_main", "output": "k"},
+                    "right": {"indicator": "kdj_main", "output": "d"},
+                }
+            ]
+        },
+        "exit_rule": {
+            "any": [
+                {
+                    "operator": "cross_below",
+                    "left": {"indicator": "kdj_main", "output": "k"},
+                    "right": {"indicator": "kdj_main", "output": "d"},
+                }
+            ]
+        },
+    }
+    errors = RuleValidator().validate(definition)
+    assert errors == []
+
+
+def test_create_kdj_from_def():
+    ind = create_indicator_from_def(
+        {
+            "id": "k",
+            "type": "kdj",
+            "source": "close",
+            "period": 3,
+        },
+        {},
+    )
+    assert ind.warmup_bars == 3

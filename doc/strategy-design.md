@@ -499,3 +499,14 @@ def get_strategy_meta() -> list[dict]:
 ```
 
 前端 `GET /api/strategies` 返回的 `parameters_schema` 即来自此处，用 `@rjsf/core` 或 Ant Design `Form` + 自渲染即可动态生成参数表单。
+
+---
+
+## 用户规则策略（RuleStrategy）
+
+除内置 Python 示例外，系统支持用户通过 **策略构建器** 定义 JSON DSL 规则策略（`kind=rule`），由 `RuleStrategy` 统一执行。
+
+- DSL 结构、指标/操作符、AI 自然语言生成：见 [strategy-builder-design.md](strategy-builder-design.md)
+- 默认模板：`DEFAULT_MA_CROSS_DEFINITION`（`rule_schema.py`）
+- 版本存储：`strategy_versions.definition`
+- 发布后方可回测与启动

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.error_handler import register_error_handlers
 from app.api.routes import (
     ai_reports,
+    ai_strategies,
     backtest,
     dashboard,
     health,
@@ -95,6 +96,7 @@ app.include_router(trades.router, prefix="/api")
 app.include_router(positions.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
 app.include_router(ai_reports.router, prefix="/api")
+app.include_router(ai_strategies.router, prefix="/api")
 app.include_router(backtest.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(watchlist.data_router, prefix="/api")

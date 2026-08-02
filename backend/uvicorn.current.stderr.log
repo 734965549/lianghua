@@ -1,0 +1,46 @@
+INFO:     Started server process [15516]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     ('127.0.0.1', 57121) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 64359) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 55326) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 62741) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 52244) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 61855) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     ('127.0.0.1', 54894) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 53807) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     ('127.0.0.1', 59990) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 52207) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 61561) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 54034) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 58747) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 62919) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     ('127.0.0.1', 55531) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 57898) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open

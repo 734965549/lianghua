@@ -1,4 +1,10 @@
-"""策略规则 DSL 常量与资源限制。"""
+"""策略规则 DSL 常量与资源限制。
+
+用户规则策略（kind=rule）的定义 JSON 须符合本模块约束，由 RuleValidator 校验、
+RuleStrategy 运行时解释。构建器与 AI 生成（AiStrategyService）均输出此格式。
+
+设计文档：doc/strategy-builder-design.md
+"""
 
 SCHEMA_VERSION = 1
 MAX_INDICATORS = 20
@@ -16,7 +22,7 @@ TREND_OPERATORS = {"rising", "falling"}
 ALL_OPERATORS = COMPARISON_OPERATORS | CROSS_OPERATORS | TREND_OPERATORS | {"between"}
 
 INDICATOR_TYPES_V1 = {
-    "sma", "ema", "rsi", "macd", "bollinger", "atr", "roc", "volume_sma",
+    "sma", "ema", "rsi", "macd", "bollinger", "atr", "roc", "volume_sma", "kdj",
 }
 INDICATOR_TYPES_NO_PERIOD = {"macd"}
 
@@ -29,6 +35,7 @@ INDICATOR_OUTPUTS: dict[str, set[str]] = {
     "atr": {"value"},
     "roc": {"value"},
     "volume_sma": {"value"},
+    "kdj": {"k", "d", "j"},
 }
 OHLCV_SOURCES = {"open", "high", "low", "close", "volume"}
 

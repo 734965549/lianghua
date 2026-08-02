@@ -41,6 +41,8 @@ backend/
       order_service.py
       trade_service.py
       ai_report_service.py
+      ai_strategy_service.py             AI 自然语言策略定义生成
+      strategy_builder_service.py        规则策略 CRUD / 发布 / 校验
       audit_service.py
     sdk/
       base.py
@@ -199,6 +201,7 @@ backend/
         assets.py                       阶段4
         history.py                      阶段7
         ai_reports.py                   阶段7
+        ai_strategies.py                阶段7 AI 策略定义生成
         logs.py                         阶段1（审计日志、系统事件）
         ws.py                           阶段2（WebSocket）
     core/
@@ -275,6 +278,8 @@ backend/
       trade_service.py                   阶段4 交易执行
       metrics_service.py                 阶段7 指标计算
       ai_report_service.py               阶段7 报告生成
+      ai_strategy_service.py             阶段7 AI 自然语言策略定义
+      strategy_builder_service.py        规则策略构建 / 发布
     sdk/
       __init__.py
       base.py                            阶段2 适配器基类

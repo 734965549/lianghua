@@ -21,6 +21,7 @@ import RuleCanvas from "../components/strategy-builder/RuleCanvas";
 import ExecutionEditor from "../components/strategy-builder/ExecutionEditor";
 import RiskEditor from "../components/strategy-builder/RiskEditor";
 import StrategySummary from "../components/strategy-builder/StrategySummary";
+import AiStrategyPanel from "../components/strategy-builder/AiStrategyPanel";
 import type { RuleGroup } from "../components/strategy-builder/ruleTreeUtils";
 import {
   DEFAULT_DEFINITION,
@@ -215,6 +216,16 @@ export default function StrategyBuilder() {
       <Card size="small" title={STEPS[step].title}>
         {step === 0 && (
           <div className="research-form-grid">
+            <div className="span-2">
+              <AiStrategyPanel
+                onGenerated={({ name: aiName, description: aiDesc, definition: aiDef }) => {
+                  if (aiName) setName(aiName);
+                  if (aiDesc) setDescription(aiDesc);
+                  setDefinition(aiDef);
+                  setValidationErrors([]);
+                }}
+              />
+            </div>
             <Form.Item label="策略名称" required className="span-2">
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：多标的均线策略" />
             </Form.Item>

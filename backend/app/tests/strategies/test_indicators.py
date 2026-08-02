@@ -6,19 +6,21 @@ from decimal import Decimal
 from app.schemas.enums import Market
 from app.sdk.models import KlineBar
 from app.strategies.indicators.moving_average import EMAIndicator, SMAIndicator
-from app.strategies.indicators.momentum import RSIIndicator
+from app.strategies.indicators.momentum import KDJIndicator, RSIIndicator
 
 
-def _bar(close: str, idx: int = 0) -> KlineBar:
+def _bar(close: str, idx: int = 0, *, spread: str = "0") -> KlineBar:
+    c = Decimal(close)
+    s = Decimal(spread)
     return KlineBar(
         symbol="600000.SH",
         market=Market.STOCK,
         interval="1d",
         bar_time=datetime(2023, 1, idx + 1, tzinfo=timezone.utc),
-        open=Decimal(close),
-        high=Decimal(close),
-        low=Decimal(close),
-        close=Decimal(close),
+        open=c,
+        high=c + s,
+        low=c - s,
+        close=c,
         volume=Decimal("1000"),
     )
 
@@ -48,3 +50,23 @@ def test_rsi_bounds():
         ind.update(_bar(c, i))
     assert ind.ready
     assert Decimal("0") <= ind.value <= Decimal("100")
+
+
+def test_kdj_outputs():
+    ind = KDJIndicator(period=3, source="close")
+    bars = [
+        ("10", "0.5"),
+        ("11", "0.5"),
+        ("12", "0.5"),
+        ("13", "0.5"),
+        ("14", "0.5"),
+    ]
+    for i, (close, spread) in enumerate(bars):
+        ind.update(_bar(close, i, spread=spread))
+    assert ind.get_output("k") is not None
+    assert ind.get_output("d") is not None
+    assert ind.get_output("j") is not None
+    k = ind.get_output("k")
+    d = ind.get_output("d")
+    j = ind.get_output("j")
+    assert j == Decimal("3") * k - Decimal("2") * d

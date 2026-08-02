@@ -1,4 +1,8 @@
-"""AI 客户端工厂：支持环境变量与系统配置库提供的运行时配置。"""
+"""AI 客户端工厂：支持环境变量与系统配置库提供的运行时配置。
+
+供 AiReportService（复盘报告）与 AiStrategyService（策略定义生成）共用。
+未配置 provider/api_key 时返回 None：复盘降级为规则模板，策略生成返回错误。
+"""
 
 from __future__ import annotations
 

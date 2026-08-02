@@ -75,6 +75,35 @@
 1. 启动实盘策略必须二次确认。
 2. 修改运行中策略参数必须提示生效时机。
 
+### 策略构建器（StrategyBuilder）
+
+路由：`/strategies/new`、`/strategies/:id/edit`
+
+八步向导：基本信息 → 标的范围 → 指标 → 公式因子 → 买入规则 → 卖出规则 → 执行与风控 → 摘要与发布。
+
+**AI 自然语言生成**（第一步）：
+
+1. 顶部 `AiStrategyPanel` 提供「AI 生成策略」入口。
+2. 用户输入中文描述，可选市场/周期偏好。
+3. 调用 `POST /api/ai/strategies/generate`，成功后自动填入名称、描述、`definition`。
+4. 若有校验问题，展示 warning，用户可在后续步骤手动修正。
+5. 未配置 AI 时提示前往系统设置。
+
+组件：
+
+| 组件 | 路径 | 说明 |
+| --- | --- | --- |
+| `AiStrategyPanel` | `strategy-builder/AiStrategyPanel.tsx` | AI 生成弹窗 |
+| `BasicInfoStep` | 市场、周期 | |
+| `SymbolsStep` | fixed/runtime 标的 | |
+| `IndicatorEditor` | 指标配置 | |
+| `FormulaEditor` | 公式因子 | |
+| `RuleGroupEditor` / `RuleCanvas` | 买入/卖出规则（表单或拖拽） | |
+| `ExecutionEditor` / `RiskEditor` | 数量与风控 | |
+| `StrategySummary` | 发布前摘要 | |
+
+设计细节见 [strategy-builder-design.md](strategy-builder-design.md)。
+
 ### 自动交易
 
 展示：
@@ -228,6 +257,7 @@ frontend/
       Dashboard.tsx          仪表盘
       Market.tsx             行情看板
       Strategies.tsx         策略监控
+      StrategyBuilder.tsx    策略构建（含 AI 生成）
       Trading.tsx            自动交易
       Positions.tsx          持仓与账户
       History.tsx            历史交易
@@ -244,6 +274,11 @@ frontend/
       KlineChart.tsx
       StrategyTable.tsx
       StrategyParamForm.tsx  根据 parameters_schema 动态渲染
+      strategy-builder/      规则 DSL 构建与 AI 生成组件
+        AiStrategyPanel.tsx
+        IndicatorEditor.tsx
+        RuleCanvas.tsx
+        ...
       OrderTable.tsx
       TradeTable.tsx
       PositionTable.tsx

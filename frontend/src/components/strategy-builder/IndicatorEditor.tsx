@@ -27,6 +27,7 @@ const FALLBACK_CATALOG: CatalogItem[] = [
   { type: "atr", name: "ATR", sources: ["close"], outputs: ["value"], requires_period: true },
   { type: "roc", name: "ROC", sources: ["close"], outputs: ["value"], requires_period: true },
   { type: "volume_sma", name: "成交量均线", sources: ["volume"], outputs: ["value"], requires_period: true },
+  { type: "kdj", name: "KDJ", sources: ["close"], outputs: ["k", "d", "j"], requires_period: true },
 ];
 
 export default function IndicatorEditor({ definition, catalog, onChange }: Props) {

@@ -20,6 +20,7 @@
 5. [sdk-adapter-design.md](sdk-adapter-design.md)：同花顺股票/期货 SDK 适配层、**Pydantic 模型与 Mock 骨架**。
 6. [risk-control-design.md](risk-control-design.md)：强制风控、熔断、一键停止、恢复规则、**规则类骨架**。
 7. [strategy-design.md](strategy-design.md)：策略生命周期、信号模型、运行隔离、**Strategy 基类与示例策略**。
+7b. [strategy-builder-design.md](strategy-builder-design.md)：规则 DSL、策略构建器、**AI 自然语言生成**。
 8. [backend-design.md](backend-design.md)：后端工程结构、事务、任务调度、审计、**目录清单与各层骨架**。
 9. [frontend-design.md](frontend-design.md)：前端页面结构、状态流、危险操作交互、**路由与组件骨架**。
 10. [ai-analysis-design.md](ai-analysis-design.md)：AI 复盘数据口径、报告结构、安全限制、**指标计算与报告骨架**。
@@ -40,6 +41,7 @@
 | backend-design.md | 完整目录文件清单（标注阶段）、config/session/Alembic/main/pytest 骨架、依赖清单 |
 | risk-control-design.md | 状态迁移矩阵、11 条风控规则类骨架、风控服务骨架、熔断监控任务、配置样例 |
 | strategy-design.md | Strategy 基类、StrategyContext、信号 schema、注册表、双均线示例策略、引擎骨架 |
+| strategy-builder-design.md | 规则 DSL、指标/操作符、构建流程、AI 策略生成 API 与安全边界 |
 | frontend-design.md | 目录结构、路由、API 客户端、WebSocket、全局 Provider、关键组件骨架、状态工具 |
 | ai-analysis-design.md | 指标计算服务骨架、报告生成服务骨架（规则化 + AI）、系统提示词、报告模板 |
 | deployment-guide.md | 完整 .env 示例、CONFIG_KEY 生成、一键启停脚本、备份脚本、命令速查、PG 安装与防火墙 |
@@ -58,6 +60,6 @@
 1. 策略、手动交易和自动撤单都不能绕过风控。
 2. 任何交易相关事件都必须落库，审计日志只追加不修改。
 3. SDK 差异只能出现在适配层，业务模块依赖统一领域模型。
-4. AI 只读取历史数据并生成复盘报告，不允许直接或间接触发下单。
+4. AI 读取历史数据生成复盘报告；AI 可辅助生成策略 **定义 JSON**（须用户确认并校验），均不允许直接或间接触发下单。
 5. MVP 以 Windows 本机单用户运行为边界，不引入多人权限和云端托管交易。
 6. 真实 SDK 未就绪前必须用 Mock SDK 跑通全部端到端用例，再接入真实 SDK。

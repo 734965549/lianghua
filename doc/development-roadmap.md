@@ -367,6 +367,14 @@
 - [x] `pages/AiReports.tsx`：选择范围 → 生成 → 历史报告列表 → 报告详情（指标图表 + 文本）。
 - [x] 页面顶部固定提示："AI 报告仅用于复盘参考，不提供直接下单入口"。
 
+### 7.6 AI 自然语言策略生成
+
+- [x] `app/services/ai_strategy_service.py`：System Prompt + 指标目录注入 + JSON 解析 + `RuleValidator` 校验 + 失败重试。
+- [x] API：`POST /api/ai/strategies/generate`（见 `api/routes/ai_strategies.py`）。
+- [x] 前端 `AiStrategyPanel` + `StrategyBuilder` 第一步集成。
+- [x] 单测：`test_ai_strategy_service.py`、`test_ai_strategy_api.py`。
+- [x] 设计文档：[strategy-builder-design.md](strategy-builder-design.md)。
+
 ### 阶段 7 完成标志
 
 - [x] 用户可选择范围生成复盘报告。

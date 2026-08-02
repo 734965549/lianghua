@@ -112,4 +112,5 @@ pytest --cov=app --cov-report=term-missing --cov-report=html
 - 不要把 `.env`、SDK 密码、AI Key 提交到仓库。
 - 熔断/紧急停止状态不会因重启自动解除。
 - AI 报告仅供复盘参考，不提供直接下单入口。
+- AI 策略生成仅辅助编写规则定义，生成后需人工确认并校验，不会自动下单。
 - **真实资金下单前**：须完成原生 SDK 接入与 `testing-acceptance.md` 上线前清单中的实盘项。

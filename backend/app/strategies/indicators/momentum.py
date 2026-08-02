@@ -2,7 +2,7 @@ from collections import deque
 from decimal import Decimal
 
 from app.sdk.models import KlineBar
-from app.strategies.indicators.base import Indicator
+from app.strategies.indicators.base import Indicator, _to_decimal
 from app.strategies.indicators.moving_average import EMAIndicator
 
 
@@ -120,3 +120,40 @@ class ROCIndicator(Indicator):
             return
         roc = (price - old) / old * Decimal("100")
         self._set_value(roc)
+
+
+class KDJIndicator(Indicator):
+    """KDJ 随机指标（A 股常用 1/3 平滑算法）。"""
+
+    output_names = ("k", "d", "j")
+
+    def __init__(self, *, period: int, source: str = "close"):
+        super().__init__(period=period, source=source)
+        self._highs: deque[Decimal] = deque(maxlen=period)
+        self._lows: deque[Decimal] = deque(maxlen=period)
+        self._k = Decimal("50")
+        self._d = Decimal("50")
+
+    def update(self, bar: KlineBar) -> None:
+        self._highs.append(_to_decimal(bar.high))
+        self._lows.append(_to_decimal(bar.low))
+        close = _to_decimal(bar.close)
+
+        if len(self._highs) < self.period:
+            self._set_outputs({"k": None, "d": None, "j": None})
+            return
+
+        highest = max(self._highs)
+        lowest = min(self._lows)
+        if highest == lowest:
+            rsv = Decimal("50")
+        else:
+            rsv = (close - lowest) / (highest - lowest) * Decimal("100")
+
+        k = (Decimal("2") / Decimal("3")) * self._k + (Decimal("1") / Decimal("3")) * rsv
+        d = (Decimal("2") / Decimal("3")) * self._d + (Decimal("1") / Decimal("3")) * k
+        j = Decimal("3") * k - Decimal("2") * d
+
+        self._k = k
+        self._d = d
+        self._set_outputs({"k": k, "d": d, "j": j})

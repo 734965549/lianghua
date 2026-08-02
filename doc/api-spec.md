@@ -99,9 +99,18 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/api/indicator-catalog` | 策略构建器：指标/操作符/公式目录 |
 | GET | `/api/strategies` | 策略列表 |
+| POST | `/api/strategies` | 创建规则策略（含 definition） |
 | GET | `/api/strategies/{strategy_id}` | 策略详情 |
+| PUT | `/api/strategies/{strategy_id}` | 更新规则策略草稿 |
 | PUT | `/api/strategies/{strategy_id}/parameters` | 更新策略参数 |
+| POST | `/api/strategies/{strategy_id}/validate` | 校验 definition |
+| POST | `/api/strategies/{strategy_id}/publish` | 发布规则策略 |
+| POST | `/api/strategies/{strategy_id}/clone` | 克隆策略 |
+| POST | `/api/strategies/{strategy_id}/archive` | 归档用户策略 |
+| GET | `/api/strategies/{strategy_id}/versions` | 版本列表 |
+| GET | `/api/strategies/{strategy_id}/versions/{version}` | 版本详情（含 definition） |
 | POST | `/api/strategies/{strategy_id}/start` | 启动策略 |
 | POST | `/api/strategies/{strategy_id}/stop` | 停止策略 |
 | GET | `/api/strategy-runs` | 策略运行记录 |
@@ -175,14 +184,15 @@ MVP 不建议开放手动新建实盘委托接口。若后续增加，必须与�
 | GET | `/api/history/trades` | 历史成交（同上） |
 | GET | `/api/history/orders/{client_order_id}/chain` | 单笔交易链路（信号→风控→委托→成交→审计） |
 
-### AI 报告
+### AI
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/ai/reports` | AI 报告列表 |
 | GET | `/api/ai/reports/{report_id}` | AI 报告详情 |
-| POST | `/api/ai/reports` | 生成 AI 报告 |
+| POST | `/api/ai/reports` | 生成 AI 复盘报告 |
 | POST | `/api/ai/reports/{report_id}/feedback` | 标记有用/无用 |
+| POST | `/api/ai/strategies/generate` | AI 自然语言生成策略 definition |
 
 生成报告请求：
 
@@ -195,6 +205,35 @@ MVP 不建议开放手动新建实盘委托接口。若后续增加，必须与�
   "symbols": []
 }
 ```
+
+生成策略定义请求：
+
+```json
+{
+  "prompt": "日线双均线，5日上穿20日买入，下穿卖出，每次100股，止损5%止盈10%",
+  "market": "stock",
+  "interval": "1d"
+}
+```
+
+- `prompt`：必填，自然语言描述，最长 4000 字符
+- `market` / `interval`：可选，作为生成偏好注入模型
+
+响应：
+
+```json
+{
+  "name": "双均线金叉",
+  "description": "快线上穿慢线买入，下穿卖出",
+  "definition": { "schema_version": 1, "market": "stock", "interval": "1d", "...": "..." },
+  "validation": { "valid": true, "errors": [] },
+  "model_name": "gpt-4o-mini"
+}
+```
+
+- 错误码：`AI_STRATEGY_NOT_CONFIGURED`、`AI_STRATEGY_PROMPT_EMPTY`、`AI_STRATEGY_FAILED`、`AI_STRATEGY_INVALID_OUTPUT`
+- 生成结果**不会自动创建策略**；用户在前端确认后调用 `POST /api/strategies` 保存
+- DSL 字段说明见 [strategy-builder-design.md](strategy-builder-design.md)
 
 ### 系统设置和日志
 
@@ -257,6 +296,10 @@ MVP 不建议开放手动新建实盘委托接口。若后续增加，必须与�
 | `ORDER_STATUS_UNKNOWN` | 委托状态未知 |
 | `STRATEGY_RUNTIME_ERROR` | 策略运行异常 |
 | `AI_REPORT_FAILED` | AI 报告生成失败 |
+| `AI_STRATEGY_NOT_CONFIGURED` | AI 未配置（策略生成） |
+| `AI_STRATEGY_PROMPT_EMPTY` | 策略描述为空 |
+| `AI_STRATEGY_FAILED` | AI 策略生成调用失败 |
+| `AI_STRATEGY_INVALID_OUTPUT` | AI 返回非合法 definition |
 
 ## 审计要求
 
@@ -268,7 +311,8 @@ MVP 不建议开放手动新建实盘委托接口。若后续增加，必须与�
 4. 一键停止和恢复交易。
 5. 撤单。
 6. 生成 AI 报告。
-7. 任何现在或未来新增的交易写接口。
+7. AI 自然语言生成策略定义（`ai_strategy_generate`）。
+8. 任何现在或未来新增的交易写接口。
 
 ---
 

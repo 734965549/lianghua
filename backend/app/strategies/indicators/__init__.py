@@ -1,5 +1,5 @@
 from app.strategies.indicators.base import IndicatorRegistry, create_indicator, create_indicator_from_def
-from app.strategies.indicators.momentum import MACDIndicator, ROCIndicator, RSIIndicator
+from app.strategies.indicators.momentum import KDJIndicator, MACDIndicator, ROCIndicator, RSIIndicator
 from app.strategies.indicators.moving_average import EMAIndicator, SMAIndicator
 from app.strategies.indicators.volatility import ATRIndicator, BollingerIndicator
 from app.strategies.indicators.volume import VolumeSMAIndicator
@@ -85,6 +85,17 @@ IndicatorRegistry.register(
         "outputs": ["value"],
         "requires_period": True,
         "params": [{"name": "period", "type": "integer", "min": 1, "max": 500}],
+        "sources": ["close"],
+    },
+)
+IndicatorRegistry.register(
+    "kdj",
+    KDJIndicator,
+    catalog={
+        "name": "KDJ 随机指标",
+        "outputs": ["k", "d", "j"],
+        "requires_period": True,
+        "params": [{"name": "period", "type": "integer", "min": 2, "max": 500}],
         "sources": ["close"],
     },
 )

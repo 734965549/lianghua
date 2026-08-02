@@ -1,0 +1,163 @@
+INFO:     Started server process [13504]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     ('127.0.0.1', 58917) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 57116) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 59455) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 53521) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     ('127.0.0.1', 53990) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 51914) - "WebSocket /api/ws/events" [accepted]
+INFO:     connection open
+Please wait for a moment:   0%|          | 0/70 [00:00<?, ?it/s]
+Please wait for a moment:   0%|          | 0/70 [00:00<?, ?it/s][APlease wait for a moment:   1%|¨‡         | 1/70 [00:01<01:55,  1.67s/it]
+Please wait for a moment:   1%|¨‡         | 1/70 [00:01<01:39,  1.44s/it][APlease wait for a moment:   3%|¨†         | 2/70 [00:02<01:38,  1.45s/it]
+Please wait for a moment:   3%|¨†         | 2/70 [00:02<01:40,  1.48s/it][APlease wait for a moment:   4%|¨…         | 3/70 [00:04<01:30,  1.35s/it]
+Please wait for a moment:   4%|¨…         | 3/70 [00:04<01:34,  1.41s/it][APlease wait for a moment:   6%|¨„         | 4/70 [00:05<01:28,  1.34s/it]
+Please wait for a moment:   6%|¨„         | 4/70 [00:05<01:35,  1.45s/it][APlease wait for a moment:   7%|¨ƒ         | 5/70 [00:06<01:26,  1.32s/it]
+Please wait for a moment:   7%|¨ƒ         | 5/70 [00:06<01:27,  1.34s/it][APlease wait for a moment:   9%|¨‚         | 6/70 [00:08<01:22,  1.29s/it]
+Please wait for a moment:   9%|¨‚         | 6/70 [00:08<01:36,  1.51s/it][APlease wait for a moment:  10%|¨€         | 7/70 [00:09<01:22,  1.30s/it]
+Please wait for a moment:  10%|¨€         | 7/70 [00:09<01:27,  1.38s/it][APlease wait for a moment:  11%|¨€¨‡        | 8/70 [00:10<01:17,  1.25s/it]
+Please wait for a moment:  11%|¨€¨‡        | 8/70 [00:11<01:22,  1.32s/it][APlease wait for a moment:  13%|¨€¨†        | 9/70 [00:11<01:17,  1.27s/it]
+Please wait for a moment:  13%|¨€¨†        | 9/70 [00:12<01:21,  1.34s/it][APlease wait for a moment:  14%|¨€¨…        | 10/70 [00:13<01:14,  1.25s/it]
+Please wait for a moment:  14%|¨€¨…        | 10/70 [00:13<01:20,  1.34s/it][APlease wait for a moment:  16%|¨€¨„        | 11/70 [00:14<01:14,  1.27s/it]Please wait for a moment:  17%|¨€¨ƒ        | 12/70 [00:15<01:13,  1.26s/it]
+Please wait for a moment:  16%|¨€¨„        | 11/70 [00:16<01:34,  1.61s/it][APlease wait for a moment:  19%|¨€¨‚        | 13/70 [00:16<01:12,  1.26s/it]
+Please wait for a moment:  17%|¨€¨ƒ        | 12/70 [00:17<01:38,  1.70s/it][A
+Please wait for a moment:  19%|¨€¨‚        | 13/70 [00:19<01:27,  1.54s/it][APlease wait for a moment:  20%|¨€¨€        | 14/70 [00:19<01:36,  1.72s/it]
+Please wait for a moment:  20%|¨€¨€        | 14/70 [00:20<01:21,  1.45s/it][APlease wait for a moment:  21%|¨€¨€¨‡       | 15/70 [00:21<01:41,  1.85s/it]
+Please wait for a moment:  21%|¨€¨€¨‡       | 15/70 [00:21<01:15,  1.38s/it][APlease wait for a moment:  23%|¨€¨€¨†       | 16/70 [00:22<01:29,  1.66s/it]
+Please wait for a moment:  23%|¨€¨€¨†       | 16/70 [00:22<01:14,  1.38s/it][APlease wait for a moment:  24%|¨€¨€¨…       | 17/70 [00:24<01:21,  1.54s/it]
+Please wait for a moment:  24%|¨€¨€¨…       | 17/70 [00:24<01:11,  1.34s/it][APlease wait for a moment:  26%|¨€¨€¨„       | 18/70 [00:25<01:14,  1.44s/it]
+Please wait for a moment:  26%|¨€¨€¨„       | 18/70 [00:25<01:07,  1.29s/it][APlease wait for a moment:  27%|¨€¨€¨ƒ       | 19/70 [00:26<01:09,  1.36s/it]
+Please wait for a moment:  27%|¨€¨€¨ƒ       | 19/70 [00:26<01:04,  1.27s/it][APlease wait for a moment:  29%|¨€¨€¨‚       | 20/70 [00:27<01:06,  1.32s/it]
+Please wait for a moment:  29%|¨€¨€¨‚       | 20/70 [00:27<01:03,  1.27s/it][APlease wait for a moment:  30%|¨€¨€¨€       | 21/70 [00:29<01:10,  1.44s/it]
+Please wait for a moment:  30%|¨€¨€¨€       | 21/70 [00:29<01:08,  1.41s/it][APlease wait for a moment:  31%|¨€¨€¨€¨‡      | 22/70 [00:31<01:09,  1.45s/it]
+Please wait for a moment:  31%|¨€¨€¨€¨‡      | 22/70 [00:30<01:05,  1.36s/it][APlease wait for a moment:  33%|¨€¨€¨€¨†      | 23/70 [00:32<01:04,  1.37s/it]
+Please wait for a moment:  33%|¨€¨€¨€¨†      | 23/70 [00:32<01:01,  1.31s/it][APlease wait for a moment:  34%|¨€¨€¨€¨…      | 24/70 [00:33<01:07,  1.46s/it]
+Please wait for a moment:  34%|¨€¨€¨€¨…      | 24/70 [00:33<01:03,  1.38s/it][APlease wait for a moment:  36%|¨€¨€¨€¨„      | 25/70 [00:35<01:02,  1.39s/it]
+Please wait for a moment:  36%|¨€¨€¨€¨„      | 25/70 [00:34<00:59,  1.33s/it][A
+Please wait for a moment:  37%|¨€¨€¨€¨ƒ      | 26/70 [00:36<00:57,  1.30s/it][APlease wait for a moment:  37%|¨€¨€¨€¨ƒ      | 26/70 [00:36<01:00,  1.38s/it]
+Please wait for a moment:  39%|¨€¨€¨€¨‚      | 27/70 [00:37<00:54,  1.28s/it][APlease wait for a moment:  39%|¨€¨€¨€¨‚      | 27/70 [00:37<00:58,  1.35s/it]
+Please wait for a moment:  40%|¨€¨€¨€¨€      | 28/70 [00:38<00:54,  1.31s/it][APlease wait for a moment:  40%|¨€¨€¨€¨€      | 28/70 [00:39<00:57,  1.37s/it]
+Please wait for a moment:  41%|¨€¨€¨€¨€¨‡     | 29/70 [00:40<00:53,  1.32s/it][APlease wait for a moment:  41%|¨€¨€¨€¨€¨‡     | 29/70 [00:40<00:55,  1.34s/it]
+Please wait for a moment:  43%|¨€¨€¨€¨€¨†     | 30/70 [00:41<00:54,  1.37s/it][APlease wait for a moment:  43%|¨€¨€¨€¨€¨†     | 30/70 [00:42<01:05,  1.63s/it]
+Please wait for a moment:  44%|¨€¨€¨€¨€¨…     | 31/70 [00:42<00:51,  1.31s/it][A
+Please wait for a moment:  46%|¨€¨€¨€¨€¨„     | 32/70 [00:43<00:48,  1.27s/it][APlease wait for a moment:  44%|¨€¨€¨€¨€¨…     | 31/70 [00:45<01:10,  1.81s/it]
+Please wait for a moment:  47%|¨€¨€¨€¨€¨ƒ     | 33/70 [00:46<00:57,  1.56s/it][APlease wait for a moment:  46%|¨€¨€¨€¨€¨„     | 32/70 [00:48<01:29,  2.35s/it]Please wait for a moment:  47%|¨€¨€¨€¨€¨ƒ     | 33/70 [00:49<01:14,  2.03s/it]
+Please wait for a moment:  49%|¨€¨€¨€¨€¨‚     | 34/70 [00:50<01:26,  2.41s/it][APlease wait for a moment:  49%|¨€¨€¨€¨€¨‚     | 34/70 [00:51<01:03,  1.76s/it]
+Please wait for a moment:  50%|¨€¨€¨€¨€¨€     | 35/70 [00:52<01:21,  2.34s/it][APlease wait for a moment:  50%|¨€¨€¨€¨€¨€     | 35/70 [00:53<01:07,  1.93s/it]
+Please wait for a moment:  51%|¨€¨€¨€¨€¨€¨‡    | 36/70 [00:53<01:09,  2.04s/it][APlease wait for a moment:  51%|¨€¨€¨€¨€¨€¨‡    | 36/70 [00:54<00:58,  1.72s/it]Please wait for a moment:  53%|¨€¨€¨€¨€¨€¨†    | 37/70 [00:55<00:51,  1.55s/it]
+Please wait for a moment:  53%|¨€¨€¨€¨€¨€¨†    | 37/70 [00:56<01:10,  2.12s/it][APlease wait for a moment:  54%|¨€¨€¨€¨€¨€¨…    | 38/70 [00:57<00:48,  1.52s/it]
+Please wait for a moment:  54%|¨€¨€¨€¨€¨€¨…    | 38/70 [01:00<01:29,  2.80s/it][APlease wait for a moment:  56%|¨€¨€¨€¨€¨€¨„    | 39/70 [01:01<01:09,  2.26s/it]Please wait for a moment:  57%|¨€¨€¨€¨€¨€¨ƒ    | 40/70 [01:02<01:00,  2.02s/it]
+Please wait for a moment:  56%|¨€¨€¨€¨€¨€¨„    | 39/70 [01:02<01:15,  2.43s/it][A
+Please wait for a moment:  57%|¨€¨€¨€¨€¨€¨ƒ    | 40/70 [01:03<01:03,  2.13s/it][APlease wait for a moment:  59%|¨€¨€¨€¨€¨€¨‚    | 41/70 [01:04<00:53,  1.85s/it]Please wait for a moment:  60%|¨€¨€¨€¨€¨€¨€    | 42/70 [01:05<00:46,  1.67s/it]
+Please wait for a moment:  59%|¨€¨€¨€¨€¨€¨‚    | 41/70 [01:06<01:03,  2.20s/it][APlease wait for a moment:  61%|¨€¨€¨€¨€¨€¨€¨‡   | 43/70 [01:06<00:42,  1.56s/it]
+Please wait for a moment:  60%|¨€¨€¨€¨€¨€¨€    | 42/70 [01:08<01:00,  2.17s/it][APlease wait for a moment:  63%|¨€¨€¨€¨€¨€¨€¨†   | 44/70 [01:08<00:44,  1.72s/it]
+Please wait for a moment:  61%|¨€¨€¨€¨€¨€¨€¨‡   | 43/70 [01:09<00:51,  1.91s/it][APlease wait for a moment:  64%|¨€¨€¨€¨€¨€¨€¨…   | 45/70 [01:10<00:40,  1.62s/it]
+Please wait for a moment:  63%|¨€¨€¨€¨€¨€¨€¨†   | 44/70 [01:10<00:46,  1.78s/it][A
+Please wait for a moment:  64%|¨€¨€¨€¨€¨€¨€¨…   | 45/70 [01:12<00:40,  1.62s/it][APlease wait for a moment:  66%|¨€¨€¨€¨€¨€¨€¨„   | 46/70 [01:13<00:51,  2.16s/it]
+Please wait for a moment:  66%|¨€¨€¨€¨€¨€¨€¨„   | 46/70 [01:13<00:37,  1.56s/it][APlease wait for a moment:  67%|¨€¨€¨€¨€¨€¨€¨ƒ   | 47/70 [01:15<00:46,  2.01s/it]
+Please wait for a moment:  67%|¨€¨€¨€¨€¨€¨€¨ƒ   | 47/70 [01:14<00:34,  1.48s/it][A
+Please wait for a moment:  69%|¨€¨€¨€¨€¨€¨€¨‚   | 48/70 [01:16<00:34,  1.57s/it][A
+Please wait for a moment:  70%|¨€¨€¨€¨€¨€¨€¨€   | 49/70 [01:17<00:30,  1.46s/it][APlease wait for a moment:  69%|¨€¨€¨€¨€¨€¨€¨‚   | 48/70 [01:18<00:53,  2.45s/it]
+Please wait for a moment:  71%|¨€¨€¨€¨€¨€¨€¨€¨‡  | 50/70 [01:19<00:28,  1.41s/it][APlease wait for a moment:  70%|¨€¨€¨€¨€¨€¨€¨€   | 49/70 [01:19<00:43,  2.09s/it]
+Please wait for a moment:  73%|¨€¨€¨€¨€¨€¨€¨€¨†  | 51/70 [01:20<00:25,  1.34s/it][APlease wait for a moment:  71%|¨€¨€¨€¨€¨€¨€¨€¨‡  | 50/70 [01:21<00:36,  1.83s/it]
+Please wait for a moment:  74%|¨€¨€¨€¨€¨€¨€¨€¨…  | 52/70 [01:21<00:23,  1.30s/it][APlease wait for a moment:  73%|¨€¨€¨€¨€¨€¨€¨€¨†  | 51/70 [01:22<00:31,  1.66s/it]Please wait for a moment:  74%|¨€¨€¨€¨€¨€¨€¨€¨…  | 52/70 [01:23<00:27,  1.54s/it]Please wait for a moment:  76%|¨€¨€¨€¨€¨€¨€¨€¨„  | 53/70 [01:24<00:24,  1.47s/it]
+Please wait for a moment:  76%|¨€¨€¨€¨€¨€¨€¨€¨„  | 53/70 [01:24<00:31,  1.88s/it][APlease wait for a moment:  77%|¨€¨€¨€¨€¨€¨€¨€¨ƒ  | 54/70 [01:26<00:22,  1.41s/it]
+Please wait for a moment:  77%|¨€¨€¨€¨€¨€¨€¨€¨ƒ  | 54/70 [01:26<00:27,  1.73s/it][APlease wait for a moment:  79%|¨€¨€¨€¨€¨€¨€¨€¨‚  | 55/70 [01:27<00:20,  1.36s/it]
+Please wait for a moment:  79%|¨€¨€¨€¨€¨€¨€¨€¨‚  | 55/70 [01:27<00:24,  1.63s/it][APlease wait for a moment:  80%|¨€¨€¨€¨€¨€¨€¨€¨€  | 56/70 [01:28<00:18,  1.30s/it]
+Please wait for a moment:  80%|¨€¨€¨€¨€¨€¨€¨€¨€  | 56/70 [01:28<00:21,  1.52s/it][APlease wait for a moment:  81%|¨€¨€¨€¨€¨€¨€¨€¨€¨‡ | 57/70 [01:29<00:16,  1.30s/it]
+Please wait for a moment:  81%|¨€¨€¨€¨€¨€¨€¨€¨€¨‡ | 57/70 [01:30<00:20,  1.55s/it][A
+Please wait for a moment:  83%|¨€¨€¨€¨€¨€¨€¨€¨€¨† | 58/70 [01:31<00:17,  1.44s/it][APlease wait for a moment:  83%|¨€¨€¨€¨€¨€¨€¨€¨€¨† | 58/70 [01:32<00:18,  1.58s/it]Please wait for a moment:  84%|¨€¨€¨€¨€¨€¨€¨€¨€¨… | 59/70 [01:33<00:16,  1.51s/it]
+Please wait for a moment:  84%|¨€¨€¨€¨€¨€¨€¨€¨€¨… | 59/70 [01:34<00:19,  1.73s/it][APlease wait for a moment:  86%|¨€¨€¨€¨€¨€¨€¨€¨€¨„ | 60/70 [01:34<00:14,  1.48s/it]Please wait for a moment:  87%|¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ | 61/70 [01:36<00:12,  1.40s/it]
+Please wait for a moment:  86%|¨€¨€¨€¨€¨€¨€¨€¨€¨„ | 60/70 [01:36<00:19,  1.94s/it][APlease wait for a moment:  89%|¨€¨€¨€¨€¨€¨€¨€¨€¨‚ | 62/70 [01:37<00:11,  1.44s/it]
+Please wait for a moment:  87%|¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ | 61/70 [01:37<00:15,  1.72s/it][APlease wait for a moment:  90%|¨€¨€¨€¨€¨€¨€¨€¨€¨€ | 63/70 [01:38<00:09,  1.37s/it]
+Please wait for a moment:  89%|¨€¨€¨€¨€¨€¨€¨€¨€¨‚ | 62/70 [01:39<00:15,  1.89s/it][APlease wait for a moment:  91%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‡| 64/70 [01:41<00:09,  1.64s/it]
+Please wait for a moment:  90%|¨€¨€¨€¨€¨€¨€¨€¨€¨€ | 63/70 [01:41<00:11,  1.70s/it][A
+Please wait for a moment:  91%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‡| 64/70 [01:42<00:09,  1.57s/it][APlease wait for a moment:  93%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨†| 65/70 [01:44<00:10,  2.03s/it]
+Please wait for a moment:  93%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨†| 65/70 [01:43<00:07,  1.52s/it][APlease wait for a moment:  94%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨…| 66/70 [01:45<00:07,  1.78s/it]
+Please wait for a moment:  94%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨…| 66/70 [01:46<00:06,  1.74s/it][APlease wait for a moment:  96%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨„| 67/70 [01:46<00:04,  1.66s/it]
+Please wait for a moment:  96%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨„| 67/70 [01:47<00:05,  1.68s/it][APlease wait for a moment:  97%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ| 68/70 [01:48<00:03,  1.59s/it]
+Please wait for a moment:  97%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ| 68/70 [01:49<00:03,  1.59s/it][APlease wait for a moment:  99%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‚| 69/70 [01:49<00:01,  1.55s/it]Please wait for a moment: 100%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨€| 70/70 [01:50<00:00,  1.43s/it]                                                                         
+Please wait for a moment:  99%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‚| 69/70 [01:50<00:01,  1.67s/it][A
+Please wait for a moment: 100%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨€| 70/70 [01:52<00:00,  1.57s/it][A
+                                                                         [APlease wait for a moment:   0%|          | 0/70 [00:00<?, ?it/s]
+Please wait for a moment:   0%|          | 0/70 [00:00<?, ?it/s][APlease wait for a moment:   1%|¨‡         | 1/70 [00:02<02:41,  2.34s/it]
+Please wait for a moment:   1%|¨‡         | 1/70 [00:01<01:37,  1.42s/it][APlease wait for a moment:   3%|¨†         | 2/70 [00:03<02:08,  1.89s/it]
+Please wait for a moment:   3%|¨†         | 2/70 [00:02<01:37,  1.43s/it][APlease wait for a moment:   4%|¨…         | 3/70 [00:05<01:52,  1.69s/it]
+Please wait for a moment:   4%|¨…         | 3/70 [00:04<01:46,  1.59s/it][APlease wait for a moment:   6%|¨„         | 4/70 [00:06<01:47,  1.63s/it]Please wait for a moment:   7%|¨ƒ         | 5/70 [00:08<01:37,  1.51s/it]
+Please wait for a moment:   6%|¨„         | 4/70 [00:06<01:41,  1.53s/it][APlease wait for a moment:   9%|¨‚         | 6/70 [00:09<01:34,  1.48s/it]
+Please wait for a moment:   7%|¨ƒ         | 5/70 [00:07<01:39,  1.53s/it][APlease wait for a moment:  10%|¨€         | 7/70 [00:11<01:33,  1.49s/it]
+Please wait for a moment:   9%|¨‚         | 6/70 [00:09<01:55,  1.81s/it][APlease wait for a moment:  11%|¨€¨‡        | 8/70 [00:12<01:32,  1.49s/it]
+Please wait for a moment:  10%|¨€         | 7/70 [00:12<02:01,  1.93s/it][APlease wait for a moment:  13%|¨€¨†        | 9/70 [00:15<01:48,  1.78s/it]Please wait for a moment:  14%|¨€¨…        | 10/70 [00:16<01:36,  1.61s/it]
+Please wait for a moment:  11%|¨€¨‡        | 8/70 [00:14<02:04,  2.01s/it][APlease wait for a moment:  16%|¨€¨„        | 11/70 [00:17<01:27,  1.49s/it]
+Please wait for a moment:  13%|¨€¨†        | 9/70 [00:15<01:51,  1.82s/it][A
+Please wait for a moment:  14%|¨€¨…        | 10/70 [00:16<01:38,  1.64s/it][APlease wait for a moment:  17%|¨€¨ƒ        | 12/70 [00:19<01:43,  1.79s/it]
+Please wait for a moment:  16%|¨€¨„        | 11/70 [00:18<01:30,  1.53s/it][APlease wait for a moment:  19%|¨€¨‚        | 13/70 [00:21<01:35,  1.68s/it]
+Please wait for a moment:  17%|¨€¨ƒ        | 12/70 [00:19<01:28,  1.53s/it][APlease wait for a moment:  20%|¨€¨€        | 14/70 [00:22<01:29,  1.60s/it]Please wait for a moment:  21%|¨€¨€¨‡       | 15/70 [00:24<01:22,  1.49s/it]
+Please wait for a moment:  19%|¨€¨‚        | 13/70 [00:22<01:42,  1.80s/it][APlease wait for a moment:  23%|¨€¨€¨†       | 16/70 [00:25<01:20,  1.49s/it]
+Please wait for a moment:  20%|¨€¨€        | 14/70 [00:24<01:45,  1.89s/it][APlease wait for a moment:  24%|¨€¨€¨…       | 17/70 [00:26<01:14,  1.41s/it]
+Please wait for a moment:  21%|¨€¨€¨‡       | 15/70 [00:25<01:37,  1.77s/it][APlease wait for a moment:  26%|¨€¨€¨„       | 18/70 [00:29<01:27,  1.68s/it]
+Please wait for a moment:  23%|¨€¨€¨†       | 16/70 [00:27<01:33,  1.73s/it][A
+Please wait for a moment:  24%|¨€¨€¨…       | 17/70 [00:28<01:24,  1.60s/it][APlease wait for a moment:  27%|¨€¨€¨ƒ       | 19/70 [00:31<01:34,  1.86s/it]Please wait for a moment:  29%|¨€¨€¨‚       | 20/70 [00:32<01:25,  1.72s/it]
+Please wait for a moment:  26%|¨€¨€¨„       | 18/70 [00:30<01:33,  1.79s/it][APlease wait for a moment:  30%|¨€¨€¨€       | 21/70 [00:34<01:21,  1.66s/it]
+Please wait for a moment:  27%|¨€¨€¨ƒ       | 19/70 [00:32<01:26,  1.69s/it][APlease wait for a moment:  31%|¨€¨€¨€¨‡      | 22/70 [00:35<01:12,  1.51s/it]
+Please wait for a moment:  29%|¨€¨€¨‚       | 20/70 [00:33<01:18,  1.56s/it][APlease wait for a moment:  33%|¨€¨€¨€¨†      | 23/70 [00:36<01:10,  1.49s/it]
+Please wait for a moment:  30%|¨€¨€¨€       | 21/70 [00:34<01:09,  1.42s/it][APlease wait for a moment:  34%|¨€¨€¨€¨…      | 24/70 [00:39<01:23,  1.82s/it]
+Please wait for a moment:  31%|¨€¨€¨€¨‡      | 22/70 [00:37<01:25,  1.78s/it][A
+Please wait for a moment:  33%|¨€¨€¨€¨†      | 23/70 [00:39<01:22,  1.76s/it][APlease wait for a moment:  36%|¨€¨€¨€¨„      | 25/70 [00:41<01:26,  1.92s/it]
+Please wait for a moment:  34%|¨€¨€¨€¨…      | 24/70 [00:40<01:17,  1.68s/it][APlease wait for a moment:  37%|¨€¨€¨€¨ƒ      | 26/70 [00:42<01:17,  1.76s/it]
+Please wait for a moment:  36%|¨€¨€¨€¨„      | 25/70 [00:42<01:11,  1.59s/it][APlease wait for a moment:  39%|¨€¨€¨€¨‚      | 27/70 [00:44<01:12,  1.70s/it]
+Please wait for a moment:  37%|¨€¨€¨€¨ƒ      | 26/70 [00:43<01:06,  1.52s/it][APlease wait for a moment:  40%|¨€¨€¨€¨€      | 28/70 [00:45<01:06,  1.59s/it]
+Please wait for a moment:  39%|¨€¨€¨€¨‚      | 27/70 [00:44<01:02,  1.46s/it][APlease wait for a moment:  41%|¨€¨€¨€¨€¨‡     | 29/70 [00:47<01:02,  1.52s/it]
+Please wait for a moment:  40%|¨€¨€¨€¨€      | 28/70 [00:45<00:57,  1.38s/it][A
+Please wait for a moment:  41%|¨€¨€¨€¨€¨‡     | 29/70 [00:47<00:58,  1.43s/it][APlease wait for a moment:  43%|¨€¨€¨€¨€¨†     | 30/70 [00:49<01:12,  1.81s/it]
+Please wait for a moment:  43%|¨€¨€¨€¨€¨†     | 30/70 [00:48<00:55,  1.38s/it][APlease wait for a moment:  44%|¨€¨€¨€¨€¨…     | 31/70 [00:51<01:06,  1.71s/it]
+Please wait for a moment:  44%|¨€¨€¨€¨€¨…     | 31/70 [00:49<00:51,  1.32s/it][APlease wait for a moment:  46%|¨€¨€¨€¨€¨„     | 32/70 [00:52<01:01,  1.63s/it]
+Please wait for a moment:  46%|¨€¨€¨€¨€¨„     | 32/70 [00:51<00:54,  1.44s/it][APlease wait for a moment:  47%|¨€¨€¨€¨€¨ƒ     | 33/70 [00:53<00:57,  1.54s/it]
+Please wait for a moment:  47%|¨€¨€¨€¨€¨ƒ     | 33/70 [00:53<01:03,  1.73s/it][APlease wait for a moment:  49%|¨€¨€¨€¨€¨‚     | 34/70 [00:56<01:04,  1.80s/it]
+Please wait for a moment:  49%|¨€¨€¨€¨€¨‚     | 34/70 [00:55<00:58,  1.61s/it][APlease wait for a moment:  50%|¨€¨€¨€¨€¨€     | 35/70 [00:59<01:13,  2.09s/it]
+Please wait for a moment:  50%|¨€¨€¨€¨€¨€     | 35/70 [00:56<00:56,  1.61s/it][A
+Please wait for a moment:  51%|¨€¨€¨€¨€¨€¨‡    | 36/70 [01:01<01:23,  2.47s/it][APlease wait for a moment:  51%|¨€¨€¨€¨€¨€¨‡    | 36/70 [01:03<01:38,  2.90s/it]
+Please wait for a moment:  53%|¨€¨€¨€¨€¨€¨†    | 37/70 [01:02<01:09,  2.10s/it][APlease wait for a moment:  53%|¨€¨€¨€¨€¨€¨†    | 37/70 [01:05<01:20,  2.44s/it]
+Please wait for a moment:  54%|¨€¨€¨€¨€¨€¨…    | 38/70 [01:04<01:09,  2.17s/it][APlease wait for a moment:  54%|¨€¨€¨€¨€¨€¨…    | 38/70 [01:07<01:17,  2.41s/it]Please wait for a moment:  56%|¨€¨€¨€¨€¨€¨„    | 39/70 [01:09<01:05,  2.12s/it]Please wait for a moment:  57%|¨€¨€¨€¨€¨€¨ƒ    | 40/70 [01:10<00:56,  1.88s/it]
+Please wait for a moment:  56%|¨€¨€¨€¨€¨€¨„    | 39/70 [01:09<01:26,  2.81s/it][APlease wait for a moment:  59%|¨€¨€¨€¨€¨€¨‚    | 41/70 [01:11<00:51,  1.77s/it]Please wait for a moment:  60%|¨€¨€¨€¨€¨€¨€    | 42/70 [01:13<00:47,  1.68s/it]Please wait for a moment:  61%|¨€¨€¨€¨€¨€¨€¨‡   | 43/70 [01:14<00:42,  1.56s/it]
+Please wait for a moment:  57%|¨€¨€¨€¨€¨€¨ƒ    | 40/70 [01:12<01:29,  2.99s/it][APlease wait for a moment:  63%|¨€¨€¨€¨€¨€¨€¨†   | 44/70 [01:16<00:39,  1.52s/it]
+Please wait for a moment:  59%|¨€¨€¨€¨€¨€¨‚    | 41/70 [01:14<01:15,  2.62s/it][APlease wait for a moment:  64%|¨€¨€¨€¨€¨€¨€¨…   | 45/70 [01:17<00:37,  1.49s/it]
+Please wait for a moment:  60%|¨€¨€¨€¨€¨€¨€    | 42/70 [01:15<01:02,  2.24s/it][APlease wait for a moment:  66%|¨€¨€¨€¨€¨€¨€¨„   | 46/70 [01:18<00:35,  1.48s/it]Please wait for a moment:  67%|¨€¨€¨€¨€¨€¨€¨ƒ   | 47/70 [01:20<00:34,  1.49s/it]
+Please wait for a moment:  61%|¨€¨€¨€¨€¨€¨€¨‡   | 43/70 [01:18<01:02,  2.32s/it][A
+Please wait for a moment:  63%|¨€¨€¨€¨€¨€¨€¨†   | 44/70 [01:19<00:52,  2.03s/it][APlease wait for a moment:  69%|¨€¨€¨€¨€¨€¨€¨‚   | 48/70 [01:22<00:34,  1.57s/it]Please wait for a moment:  70%|¨€¨€¨€¨€¨€¨€¨€   | 49/70 [01:23<00:31,  1.50s/it]
+Please wait for a moment:  64%|¨€¨€¨€¨€¨€¨€¨…   | 45/70 [01:21<00:52,  2.10s/it][A
+Please wait for a moment:  66%|¨€¨€¨€¨€¨€¨€¨„   | 46/70 [01:24<00:51,  2.16s/it][APlease wait for a moment:  71%|¨€¨€¨€¨€¨€¨€¨€¨‡  | 50/70 [01:26<00:39,  1.97s/it]
+Please wait for a moment:  67%|¨€¨€¨€¨€¨€¨€¨ƒ   | 47/70 [01:25<00:44,  1.93s/it][APlease wait for a moment:  73%|¨€¨€¨€¨€¨€¨€¨€¨†  | 51/70 [01:28<00:35,  1.86s/it]
+Please wait for a moment:  69%|¨€¨€¨€¨€¨€¨€¨‚   | 48/70 [01:27<00:40,  1.82s/it][APlease wait for a moment:  74%|¨€¨€¨€¨€¨€¨€¨€¨…  | 52/70 [01:29<00:31,  1.74s/it]
+Please wait for a moment:  70%|¨€¨€¨€¨€¨€¨€¨€   | 49/70 [01:29<00:44,  2.10s/it][APlease wait for a moment:  76%|¨€¨€¨€¨€¨€¨€¨€¨„  | 53/70 [01:32<00:33,  1.99s/it]Please wait for a moment:  77%|¨€¨€¨€¨€¨€¨€¨€¨ƒ  | 54/70 [01:33<00:29,  1.87s/it]
+Please wait for a moment:  71%|¨€¨€¨€¨€¨€¨€¨€¨‡  | 50/70 [01:31<00:39,  1.99s/it][A
+Please wait for a moment:  73%|¨€¨€¨€¨€¨€¨€¨€¨†  | 51/70 [01:33<00:35,  1.86s/it][APlease wait for a moment:  79%|¨€¨€¨€¨€¨€¨€¨€¨‚  | 55/70 [01:35<00:26,  1.80s/it]
+Please wait for a moment:  74%|¨€¨€¨€¨€¨€¨€¨€¨…  | 52/70 [01:34<00:31,  1.76s/it][APlease wait for a moment:  80%|¨€¨€¨€¨€¨€¨€¨€¨€  | 56/70 [01:37<00:24,  1.73s/it]
+Please wait for a moment:  76%|¨€¨€¨€¨€¨€¨€¨€¨„  | 53/70 [01:36<00:28,  1.67s/it][APlease wait for a moment:  81%|¨€¨€¨€¨€¨€¨€¨€¨€¨‡ | 57/70 [01:38<00:21,  1.64s/it]Please wait for a moment:  83%|¨€¨€¨€¨€¨€¨€¨€¨€¨† | 58/70 [01:39<00:19,  1.59s/it]
+Please wait for a moment:  77%|¨€¨€¨€¨€¨€¨€¨€¨ƒ  | 54/70 [01:38<00:30,  1.89s/it][APlease wait for a moment:  84%|¨€¨€¨€¨€¨€¨€¨€¨€¨… | 59/70 [01:41<00:17,  1.61s/it]
+Please wait for a moment:  79%|¨€¨€¨€¨€¨€¨€¨€¨‚  | 55/70 [01:40<00:27,  1.84s/it][APlease wait for a moment:  86%|¨€¨€¨€¨€¨€¨€¨€¨€¨„ | 60/70 [01:43<00:15,  1.57s/it]
+Please wait for a moment:  80%|¨€¨€¨€¨€¨€¨€¨€¨€  | 56/70 [01:41<00:23,  1.69s/it][APlease wait for a moment:  87%|¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ | 61/70 [01:44<00:13,  1.50s/it]
+Please wait for a moment:  81%|¨€¨€¨€¨€¨€¨€¨€¨€¨‡ | 57/70 [01:42<00:20,  1.55s/it][APlease wait for a moment:  89%|¨€¨€¨€¨€¨€¨€¨€¨€¨‚ | 62/70 [01:45<00:11,  1.47s/it]Please wait for a moment:  90%|¨€¨€¨€¨€¨€¨€¨€¨€¨€ | 63/70 [01:47<00:10,  1.49s/it]
+Please wait for a moment:  83%|¨€¨€¨€¨€¨€¨€¨€¨€¨† | 58/70 [01:45<00:21,  1.77s/it][APlease wait for a moment:  91%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‡| 64/70 [01:48<00:08,  1.45s/it]
+Please wait for a moment:  84%|¨€¨€¨€¨€¨€¨€¨€¨€¨… | 59/70 [01:46<00:18,  1.64s/it][APlease wait for a moment:  93%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨†| 65/70 [01:51<00:08,  1.75s/it]
+Please wait for a moment:  86%|¨€¨€¨€¨€¨€¨€¨€¨€¨„ | 60/70 [01:50<00:22,  2.24s/it][APlease wait for a moment:  94%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨…| 66/70 [01:52<00:06,  1.67s/it]
+Please wait for a moment:  87%|¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ | 61/70 [01:51<00:18,  2.01s/it][APlease wait for a moment:  96%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨„| 67/70 [01:55<00:05,  1.95s/it]
+Please wait for a moment:  89%|¨€¨€¨€¨€¨€¨€¨€¨€¨‚ | 62/70 [01:53<00:14,  1.84s/it][APlease wait for a moment:  97%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ| 68/70 [01:56<00:03,  1.76s/it]
+Please wait for a moment:  90%|¨€¨€¨€¨€¨€¨€¨€¨€¨€ | 63/70 [01:55<00:13,  1.97s/it][A
+Please wait for a moment:  91%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‡| 64/70 [01:56<00:11,  1.83s/it][APlease wait for a moment:  99%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‚| 69/70 [01:59<00:02,  2.07s/it]
+Please wait for a moment:  93%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨†| 65/70 [01:58<00:08,  1.67s/it][APlease wait for a moment: 100%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨€| 70/70 [02:00<00:00,  1.78s/it]                                                                         
+Please wait for a moment:  94%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨…| 66/70 [01:59<00:06,  1.61s/it][A
+Please wait for a moment:  96%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨„| 67/70 [02:03<00:07,  2.36s/it][A
+Please wait for a moment:  97%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨ƒ| 68/70 [02:05<00:04,  2.13s/it][A
+Please wait for a moment:  99%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨‚| 69/70 [02:07<00:02,  2.18s/it][A
+Please wait for a moment: 100%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨€| 70/70 [02:08<00:00,  1.85s/it][A
+                                                                         [A

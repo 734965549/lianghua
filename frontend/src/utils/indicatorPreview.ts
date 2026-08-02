@@ -121,6 +121,39 @@ function roc(values: number[], period: number): (number | null)[] {
   });
 }
 
+function kdj(
+  values: number[],
+  period: number,
+): { k: (number | null)[]; d: (number | null)[]; j: (number | null)[] } {
+  const highs = values.map((c) => c * 1.01);
+  const lows = values.map((c) => c * 0.99);
+  const kOut: (number | null)[] = [];
+  const dOut: (number | null)[] = [];
+  const jOut: (number | null)[] = [];
+  let k = 50;
+  let d = 50;
+  for (let i = 0; i < values.length; i += 1) {
+    if (i + 1 < period) {
+      kOut.push(null);
+      dOut.push(null);
+      jOut.push(null);
+      continue;
+    }
+    const hSlice = highs.slice(i + 1 - period, i + 1);
+    const lSlice = lows.slice(i + 1 - period, i + 1);
+    const highest = Math.max(...hSlice);
+    const lowest = Math.min(...lSlice);
+    const rsv =
+      highest === lowest ? 50 : ((values[i] - lowest) / (highest - lowest)) * 100;
+    k = (2 / 3) * k + (1 / 3) * rsv;
+    d = (2 / 3) * d + (1 / 3) * k;
+    jOut.push(3 * k - 2 * d);
+    kOut.push(k);
+    dOut.push(d);
+  }
+  return { k: kOut, d: dOut, j: jOut };
+}
+
 export function buildIndicatorPreview(
   type: string,
   options: {
@@ -196,6 +229,17 @@ export function buildIndicatorPreview(
           },
         ],
       };
+    case "kdj": {
+      const { k, d, j } = kdj(closes, period);
+      return {
+        times,
+        lines: [
+          { name: "K", data: k, color: "#3b82f6" },
+          { name: "D", data: d, color: "#f59e0b" },
+          { name: "J", data: j, color: "#ec4899" },
+        ],
+      };
+    }
     default:
       return { times, lines: [] };
   }

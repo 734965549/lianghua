@@ -24,6 +24,11 @@ def _generate_strategy_id() -> str:
 
 
 class StrategyBuilderService:
+    """规则策略 CRUD、版本发布与 DSL 校验。
+
+    AI 生成的 definition 经用户确认后，通过 create_strategy / update_strategy 落库。
+    自然语言生成本身由 AiStrategyService 负责，见 doc/strategy-builder-design.md。
+    """
     def get_indicator_catalog(self) -> dict:
         from app.strategies.rule_schema import FORMULA_OPERATORS, FORMULA_REF_HELP
 

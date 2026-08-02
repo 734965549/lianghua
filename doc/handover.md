@@ -79,7 +79,8 @@ Windows 单机量化交易终端：FastAPI + React + PostgreSQL，默认 Mock SD
 ### 阶段 7：AI 复盘与报表
 
 - 历史筛选、CSV（UTF-8 BOM）、交易链路抽屉
-- 规则化 Markdown 报告；可选 OpenAI 兼容接口
+- 规则化 Markdown 报告；可选 OpenAI 兼容接口（复盘）
+- AI 自然语言策略定义生成（`POST /api/ai/strategies/generate`，见 `strategy-builder-design.md`）
 
 ### 阶段 8：收尾与工程上线
 
@@ -188,7 +189,8 @@ $env:LIANGHUA_STOCK_ACCOUNT="SIM_STOCK_001"
 - 在原生 SDK 接入、只读探活、小额下单撤单和实盘验收清单全部通过前，禁止使用真实资金。
 - 熔断 / 紧急停止**不会**因进程重启自动解除。
 - 非法订单状态回报会标为 `unknown`，需人工 `confirm-unknown` 后再恢复交易。
-- AI 仅复盘参考，禁止「直接下单」话术；外部 AI 只发聚合指标。
+- AI 报告仅供复盘参考，禁止「直接下单」话术；外部 AI 只发聚合指标。
+- AI 策略生成只输出 DSL JSON，须经 `RuleValidator` 与用户确认后才可保存，不自动创建或启动策略。
 - 交易时段关闭 Windows 休眠；PostgreSQL 勿对公网开放。
 - 换机器：复制 `backend/.env.example` → `.env`，再 `alembic upgrade head`。
 - `stop.ps1` 只停前后端开发进程，**不停** Docker/PostgreSQL。

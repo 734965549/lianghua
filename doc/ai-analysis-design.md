@@ -1,5 +1,7 @@
 # AI 分析设计
 
+> **相关能力**：除盘后复盘报告外，系统还提供 **AI 自然语言策略定义生成**（见 [strategy-builder-design.md](strategy-builder-design.md) §AI 自然语言生成）。两者共用 `ai_client` 配置，但职责分离：复盘只读历史数据；策略生成只输出 DSL JSON，不触发交易。
+
 ## 目标
 
 AI 分析模块读取历史交易、策略表现、行情和风控记录，生成复盘报告、风险归因和策略改进建议。AI 不参与实时交易决策，不允许直接或间接触发下单。
@@ -122,6 +124,22 @@ sequenceDiagram
 3. 报告引用的交易次数、盈亏和风控次数与数据库一致。
 4. 无交易数据时报告明确说明数据不足。
 5. 报告不包含直接下单指令。
+
+---
+
+## AI 策略定义生成（已实现）
+
+与复盘报告不同，策略生成模块（`AiStrategyService`）将用户自然语言转为规则 DSL JSON，供策略构建器加载编辑。
+
+| 维度 | AI 复盘 | AI 策略生成 |
+| --- | --- | --- |
+| 入口 | `POST /api/ai/reports` | `POST /api/ai/strategies/generate` |
+| 输出 | Markdown 报告 | `definition` JSON + 校验结果 |
+| 是否落库 | 是（`ai_reports`） | 否（用户确认后走策略 CRUD） |
+| 未配置 AI | 规则化模板降级 | 返回错误，不降级 |
+| 安全 | 过滤下单指令话术 | RuleValidator 强制校验 |
+
+实现细节、DSL 结构与示例见 [strategy-builder-design.md](strategy-builder-design.md)。
 
 ---
 
