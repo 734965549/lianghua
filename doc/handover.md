@@ -1,6 +1,6 @@
 # 项目交接说明（阶段 0–8 收尾 + 2026-07-24 验证）
 
-> 更新日期：2026-07-24  
+> 更新日期：2026-08-19（在 2026-07-24 交接基础上增补 TqSdk）  
 > 项目路径：`D:\Epan\BaiduNetdiskDownload\go\lianghua`  
 > 状态：**MVP 工程主线已闭环，Mock 可本地冒烟**；**尚不能算正式验收完成**；**不建议无人值守模拟自动下单**；真实同花顺 SDK / 实盘资金未接入。  
 > Git：最新提交仍为 `064591e`；修复与增强轮次改动仍在 working tree（约 **91** 个未提交文件）。
@@ -19,7 +19,8 @@ Windows 单机量化交易终端：FastAPI + React + PostgreSQL，默认 Mock SD
 | --- | --- |
 | 可以跑 | 界面浏览、行情 Mock、人工监督的工程冒烟（含指定 GET API；`acceptance_smoke` 另含写库） |
 | 暂缓跑 | 自动策略持续产生模拟委托（需人工盯场） |
-| 不能跑 | 实盘 / 原生 SDK（未配置账户与 DLL） |
+| 不能跑 | 实盘自动交易（未配置/未 arm 实盘开关）；原生同花顺 DLL 仍未接入 |
+| 期货通道 | `FUTURES_BROKER_TYPE=tqsdk`；见 `doc/tqsdk-futures-integration.md`；先跑 `scripts/tqsdk_smoke_query.py` 只读探活 |
 | 测试 | 后端 pytest **170 passed, 0 failed**（2026-07-24） |
 | 迁移 | `0008_audit_append_only (head)` |
 | SDK | 当前验收环境有效模式为 `mock`，账户为空；每次启动前仍需核对环境变量和 `/api/health`（系统环境变量可覆盖 `.env`） |
@@ -75,6 +76,12 @@ Windows 单机量化交易终端：FastAPI + React + PostgreSQL，默认 Mock SD
 
 - Driver：`Unconfigured` / `Simulated` / `Native` 占位
 - 股票 / 期货适配器 + 字段映射、双通道；验收脚本已备
+
+### 期货直连通道（2026-08 增补，独立于同花顺 SDK）
+
+- **TqSdk（天勤）**：`TqSdkBroker` + `TqSdkRuntime`；设计见 `doc/tqsdk-futures-integration.md`
+- 只读冒烟：`scripts/tqsdk_smoke_query.py`
+- 默认 `LIVE_ENABLED=false`；下单超时返回结果未知，禁止自动重试
 
 ### 阶段 7：AI 复盘与报表
 
@@ -133,6 +140,9 @@ $env:LIANGHUA_SDK_MODE="real"
 $env:LIANGHUA_SDK_DRIVER="sim"
 $env:LIANGHUA_STOCK_ACCOUNT="SIM_STOCK_001"
 .\.venv\Scripts\python.exe scripts\sdk_smoke_query.py --market stock
+
+# TqSdk 只读探活（需 .env 配置；禁止报单）
+.\.venv\Scripts\python.exe scripts\tqsdk_smoke_query.py
 ```
 
 默认：`LIANGHUA_SDK_MODE=mock`。敏感配置在 `backend/.env`（**勿提交**）。

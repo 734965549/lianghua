@@ -4,7 +4,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.enums import Market, OrderSide, OrderStatus, PriceType, SignalAction
+from app.schemas.enums import (
+    HedgeFlag,
+    Market,
+    OffsetFlag,
+    OrderSide,
+    OrderStatus,
+    PositionDate,
+    PositionDirection,
+    PriceType,
+    SignalAction,
+)
 
 
 class AdapterStatus(BaseModel):
@@ -53,6 +63,20 @@ class PositionSnapshot(BaseModel):
     market_value: Decimal
     pnl: Decimal
     snapshot_time: datetime
+    # 期货扩展（8.2 节）：多空、今昨仓、冻结与可平数量
+    exchange_id: str = ""
+    position_date: PositionDate | str | None = None
+    position_direction: PositionDirection | str | None = None
+    quantity_today: Decimal = Decimal("0")
+    quantity_yesterday: Decimal = Decimal("0")
+    frozen_quantity: Decimal = Decimal("0")
+    frozen_today: Decimal = Decimal("0")
+    frozen_yesterday: Decimal = Decimal("0")
+    available_today: Decimal = Decimal("0")
+    available_yesterday: Decimal = Decimal("0")
+    margin: Decimal = Decimal("0")
+    position_profit: Decimal = Decimal("0")
+    trading_day: str | None = None
     raw_payload: dict | None = None
 
 
@@ -65,6 +89,15 @@ class AccountSnapshot(BaseModel):
     market_value: Decimal
     pnl: Decimal
     snapshot_time: datetime
+    # 期货扩展（8.3 节）：CTP 资金账户字段，可空兼容股票
+    balance: Decimal | None = None
+    curr_margin: Decimal | None = None
+    frozen_margin: Decimal | None = None
+    commission: Decimal | None = None
+    close_profit: Decimal | None = None
+    position_profit: Decimal | None = None
+    risk_ratio: Decimal | None = None
+    trading_day: str | None = None
     raw_payload: dict | None = None
 
 
@@ -79,6 +112,11 @@ class PlaceOrderRequest(BaseModel):
     price: Decimal | None = None
     quantity: Decimal
     metadata: dict = Field(default_factory=dict)
+    # 期货强类型字段（8.1 节）：迁移期可从 metadata 读取兼容值
+    exchange_id: str = ""
+    offset_flag: OffsetFlag | str | None = None
+    hedge_flag: HedgeFlag | str | None = None
+    trading_day: str | None = None
 
 
 class PlaceOrderResult(BaseModel):
@@ -113,6 +151,12 @@ class OrderUpdateEvent(BaseModel):
     filled_quantity: Decimal = Decimal("0")
     remaining_quantity: Decimal = Decimal("0")
     event_time: datetime
+    # 期货强类型字段
+    exchange_id: str = ""
+    offset_flag: OffsetFlag | str | None = None
+    hedge_flag: HedgeFlag | str | None = None
+    trading_day: str | None = None
+    broker_type: str = ""
     raw_payload: dict | None = None
 
 
@@ -127,6 +171,10 @@ class TradeUpdateEvent(BaseModel):
     quantity: Decimal
     fee: Decimal = Decimal("0")
     trade_time: datetime
+    # 期货强类型字段：成交唯一键需包含 broker/账户/交易日/交易所
+    exchange_id: str = ""
+    trading_day: str | None = None
+    broker_type: str = ""
     raw_payload: dict | None = None
 
 
@@ -169,6 +217,15 @@ class OrderSnapshot(BaseModel):
     remaining_quantity: Decimal = Decimal("0")
     symbol: str | None = None
     market: Market | None = None
+    # 期货扩展：委托身份与开平/投保
+    exchange_id: str = ""
+    offset_flag: OffsetFlag | str | None = None
+    hedge_flag: HedgeFlag | str | None = None
+    trading_day: str | None = None
+    order_ref: str | None = None
+    front_id: int | None = None
+    session_id: int | None = None
+    order_sys_id: str | None = None
     raw_payload: dict | None = None
 
 
@@ -185,6 +242,9 @@ class TradeSnapshot(BaseModel):
     quantity: Decimal = Decimal("0")
     fee: Decimal = Decimal("0")
     trade_time: datetime | None = None
+    # 期货扩展
+    exchange_id: str = ""
+    trading_day: str | None = None
     raw_payload: dict | None = None
 
 

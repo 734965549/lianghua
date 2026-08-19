@@ -90,3 +90,34 @@ class FillModel(str, enum.Enum):
     NEXT_CLOSE = "next_close"
     VWAP = "vwap"
     TICK_PRICE = "tick_price"
+
+
+class OffsetFlag(str, enum.Enum):
+    """期货开平标志。MVP 要求调用方明确指定，禁止模糊 close。"""
+
+    OPEN = "open"
+    CLOSE = "close"
+    CLOSE_TODAY = "close_today"
+    CLOSE_YESTERDAY = "close_yesterday"
+
+
+class HedgeFlag(str, enum.Enum):
+    """投保标志。MVP 仅允许投机。"""
+
+    SPECULATION = "speculation"
+    HEDGE = "hedge"
+    ARBITRAGE = "arbitrage"
+
+
+class PositionDirection(str, enum.Enum):
+    """期货持仓方向。"""
+
+    LONG = "long"
+    SHORT = "short"
+
+
+class PositionDate(str, enum.Enum):
+    """今昨仓。"""
+
+    TODAY = "today"
+    HISTORY = "history"

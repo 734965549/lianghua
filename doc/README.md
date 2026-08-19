@@ -18,7 +18,8 @@
 3. [database-design.md](database-design.md)：PostgreSQL 表结构、约束、索引、保留策略、**完整 DDL**。
 4. [api-spec.md](api-spec.md)：前后端接口契约、统一响应、错误码、实时事件、**逐接口出入参**。
 5. [sdk-adapter-design.md](sdk-adapter-design.md)：同花顺股票/期货 SDK 适配层、**Pydantic 模型与 Mock 骨架**。
-6. [risk-control-design.md](risk-control-design.md)：强制风控、熔断、一键停止、恢复规则、**规则类骨架**。
+6. [tqsdk-futures-integration.md](tqsdk-futures-integration.md)：天勤 TqSdk 期货通道（绕开原生 CTP SDK 门槛）、**Runtime 模型、配置、只读冒烟与验收顺序**。
+7. [risk-control-design.md](risk-control-design.md)：强制风控、熔断、一键停止、恢复规则、**规则类骨架**。
 7. [strategy-design.md](strategy-design.md)：策略生命周期、信号模型、运行隔离、**Strategy 基类与示例策略**。
 7b. [strategy-builder-design.md](strategy-builder-design.md)：规则 DSL、策略构建器、**AI 自然语言生成**。
 8. [backend-design.md](backend-design.md)：后端工程结构、事务、任务调度、审计、**目录清单与各层骨架**。
@@ -38,6 +39,7 @@
 | database-design.md | 8 个迁移的完整 DDL、触发器、SQLAlchemy 基类与模型示例、归档脚本 |
 | api-spec.md | 统一响应骨架 + 35 个接口逐个出入参表与 JSON 示例 + WebSocket 事件字段 |
 | sdk-adapter-design.md | Pydantic 标准模型、适配器基类与错误体系、Mock 适配器骨架、工厂、契约测试 |
+| tqsdk-futures-integration.md | 天勤 TqSdk 通道架构、配置、映射、实盘双开关、只读冒烟与验收顺序 |
 | backend-design.md | 完整目录文件清单（标注阶段）、config/session/Alembic/main/pytest 骨架、依赖清单 |
 | risk-control-design.md | 状态迁移矩阵、11 条风控规则类骨架、风控服务骨架、熔断监控任务、配置样例 |
 | strategy-design.md | Strategy 基类、StrategyContext、信号 schema、注册表、双均线示例策略、引擎骨架 |

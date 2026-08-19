@@ -1,6 +1,10 @@
 # 同花顺期货 SDK 调研笔记
 
 > 阶段 6 骨架期文档。真实 SDK 到位后补充 TBD 项并更新字段对照表。
+>
+> 期货直连通道：
+> - 天勤 TqSdk（推荐绕开原生 SDK 资金门槛）：见 [TqSdk 期货通道实施说明](tqsdk-futures-integration.md)
+> - 原生 CTP：若已落地见 [CTP 期货实盘接入实施设计](ctp-futures-integration.md)
 
 ## 基本信息
 

@@ -171,6 +171,14 @@ class MarketService:
             broker = broker_manager.get_broker(market)
             broker.on_order_update(order_service.on_order_update)
             broker.on_trade_update(trade_service.on_trade_update)
+            # TqSdk 直接接入：主动连接期货交易通道（live 与只读均需登录才可查询）
+            broker_name = getattr(broker, "name", "")
+            if broker_name == "tqsdk":
+                try:
+                    broker.connect()
+                except Exception:
+                    logger.exception("%s 交易通道启动失败，将保持未就绪状态", broker_name.upper())
+
 
         db = SessionLocal()
         try:
@@ -199,6 +207,15 @@ class MarketService:
             sdk_manager.get_futures_adapter().disconnect()
         except Exception:
             logger.debug("停止 futures adapter 异常", exc_info=True)
+        # 主动断开直接 Broker
+        for market in (Market.STOCK, Market.FUTURES):
+            try:
+                broker = broker_manager.get_broker(market)
+                broker_name = getattr(broker, "name", "")
+                if broker_name in {"tqsdk", "qmt", "ptrade"}:
+                    broker.disconnect()
+            except Exception:
+                logger.debug("停止 broker %s 异常", market.value, exc_info=True)
         self._started = False
 
     def reconfigure(self) -> None:

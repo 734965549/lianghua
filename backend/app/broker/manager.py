@@ -2,12 +2,28 @@ from app.broker.adapter_broker import AdapterBroker
 from app.broker.base import Broker
 from app.broker.ptrade_broker import PTradeBroker
 from app.broker.qmt_broker import QMTBroker
+from app.broker.tqsdk_broker import TqSdkBroker
 from app.core.config import settings
 from app.schemas.enums import Market
 from app.sdk import manager as sdk_manager
 
 _stock_broker: Broker | None = None
 _futures_broker: Broker | None = None
+
+
+def _tqsdk_config() -> dict:
+    """TqSdk 专用配置（与 CTP 键隔离，避免互相覆盖）。"""
+    return {
+        "broker_id": settings.tqsdk_broker_id,
+        "account_id": settings.tqsdk_account_id,
+        "password": settings.tqsdk_password,
+        "auth_user": settings.tqsdk_auth_user,
+        "auth_password": settings.tqsdk_auth_password,
+        "live_enabled": settings.tqsdk_live_enabled,
+        "live_arm_token": settings.tqsdk_live_arm_token,
+        "command_timeout_seconds": settings.tqsdk_command_timeout_seconds,
+        "command_queue_size": settings.tqsdk_command_queue_size,
+    }
 
 
 def _broker_config() -> dict:
@@ -26,15 +42,26 @@ def _broker_config() -> dict:
     }
 
 
+def _market_broker_type(market: Market) -> str:
+    """按市场解析 Broker 类型；未设置市场专用配置时回退到旧 broker_type。"""
+    if market == Market.STOCK:
+        value = (settings.stock_broker_type or settings.broker_type).strip().lower()
+    else:
+        value = (settings.futures_broker_type or settings.broker_type).strip().lower()
+    return value
+
+
 def _create_broker(market: Market) -> Broker:
-    """根据 broker_type 配置创建真实 Broker 或包装 SDK Adapter。"""
-    broker_type = settings.broker_type.lower()
+    """根据市场 Broker 类型创建真实 Broker 或包装 SDK Adapter。"""
+    broker_type = _market_broker_type(market)
     config = _broker_config()
 
     if broker_type == "qmt" and market == Market.STOCK:
         return QMTBroker(config)
     if broker_type == "ptrade" and market == Market.STOCK:
         return PTradeBroker(config)
+    if broker_type == "tqsdk" and market == Market.FUTURES:
+        return TqSdkBroker(_tqsdk_config())
 
     # 默认：基于现有 SDK Adapter 包装
     adapter_factory = (
@@ -48,12 +75,14 @@ def _ensure_broker(
     market: Market,
 ) -> Broker:
     """在配置或 adapter 单例变更后自动重建 broker。"""
-    expected_type = settings.broker_type.lower()
+    expected_type = _market_broker_type(market)
     if current_broker is not None:
         current_name = getattr(current_broker, "name", "")
         if expected_type == "qmt" and current_name == "qmt":
             return current_broker
         if expected_type == "ptrade" and current_name == "ptrade":
+            return current_broker
+        if expected_type == "tqsdk" and current_name == "tqsdk":
             return current_broker
         if expected_type in ("", "adapter") and isinstance(current_broker, AdapterBroker):
             current_adapter = getattr(current_broker, "adapter", None)
@@ -67,7 +96,7 @@ def _ensure_broker(
 
 
 def get_broker(market: Market | str) -> Broker:
-    """获取指定市场的 Broker。支持 QMT / PTrade / SDK Adapter。"""
+    """获取指定市场的 Broker。支持 QMT / PTrade / TqSdk / SDK Adapter。"""
     global _stock_broker, _futures_broker
     if isinstance(market, str):
         market = Market(market)

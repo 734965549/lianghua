@@ -120,11 +120,14 @@
 | 12 | 历史交易筛选/CSV 导出 | 是 | 是 |
 | 13 | AI 自然语言生成策略 definition 且校验通过 | 是（需配置 AI） | 可选 |
 | 14 | 规则策略构建→发布→回测 | 是 | 是 |
+| 15 | TqSdk 只读冒烟（账户/持仓/委托/成交） | Fake 单测已有 | 待真实账号 |
+| 16 | TqSdk 限价 1 手报撤（双开关开启后） | — | 待真实账号 |
 
 脚本：
 
 - `backend/scripts/sdk_smoke_query.py`（real+sim 查询）
 - `backend/scripts/sdk_small_order_cancel.py`（sim 下单撤单）
+- `backend/scripts/tqsdk_smoke_query.py`（天勤只读探活，禁止报单；见 `tqsdk-futures-integration.md`）
 - `backend/scripts/acceptance_smoke.py`（后端已启动时的只读/报告冒烟）
 - `backend/scripts/backup_db.ps1`（库备份）
 

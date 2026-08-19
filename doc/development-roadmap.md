@@ -318,6 +318,15 @@
 - [x] 验证回调和轮询双通道都能同步订单/成交，幂等不重复。（`test_dual_channel_sync.py` + sim）
 - [x] 小规模查询测试：连接、查账户、查持仓、查委托、查成交。
 
+### 6.5 期货直连通道（TqSdk，独立于同花顺 SDK）
+
+> 设计文档：[tqsdk-futures-integration.md](tqsdk-futures-integration.md)。
+
+- [x] 天勤 TqSdk：`TqSdkBroker` + `TqSdkRuntime`、配置、Fake 单测、`scripts/tqsdk_smoke_query.py`。
+- [ ] TqSdk 真实账户只读登录至少一个交易时段（待申请账号）。
+- [ ] TqSdk 限价 1 手报撤 + 成交验收（`LIVE_ENABLED` + arm）。
+- [ ] 成交幂等键 / 对账服务泛化为通用 `broker_type`（账户打通后再做）。
+
 ### 6.5 小额实盘前验收
 
 - [x] 按 `testing-acceptance.md` §上线前检查清单 逐项打勾。（工程项；真实资金项待 SDK）

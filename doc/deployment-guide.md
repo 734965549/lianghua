@@ -29,6 +29,8 @@
 | `LIANGHUA_FUTURES_SDK_PATH` | 期货 SDK 本地路径 |
 | `LIANGHUA_STOCK_ACCOUNT` | 股票账号标识 |
 | `LIANGHUA_FUTURES_ACCOUNT` | 期货账号标识 |
+| `LIANGHUA_FUTURES_BROKER_TYPE` | 期货交易通道：空/`adapter` / `tqsdk`（及后续 `ctp`） |
+| `LIANGHUA_TQSDK_*` | 天勤通道配置（见 [tqsdk-futures-integration.md](tqsdk-futures-integration.md)） |
 | `LIANGHUA_CONFIG_KEY` | 本地配置加密密钥 |
 | `LIANGHUA_AI_PROVIDER` | AI 服务提供方；复盘未配置降级模板，策略生成未配置则报错 |
 | `LIANGHUA_AI_API_KEY` | AI 密钥，可为空 |
@@ -126,6 +128,17 @@ LIANGHUA_STOCK_SDK_PATH=C:/ths/stock_sdk
 LIANGHUA_FUTURES_SDK_PATH=C:/ths/futures_sdk
 LIANGHUA_STOCK_ACCOUNT=
 LIANGHUA_FUTURES_ACCOUNT=
+
+# ===== 真实交易 Broker（按市场）=====
+# 期货：adapter / tqsdk（互斥；细节见 doc/tqsdk-futures-integration.md）
+LIANGHUA_FUTURES_BROKER_TYPE=
+# LIANGHUA_FUTURES_BROKER_TYPE=tqsdk
+# LIANGHUA_TQSDK_BROKER_ID=
+# LIANGHUA_TQSDK_ACCOUNT_ID=
+# LIANGHUA_TQSDK_PASSWORD=
+# LIANGHUA_TQSDK_AUTH_USER=
+# LIANGHUA_TQSDK_AUTH_PASSWORD=
+# LIANGHUA_TQSDK_LIVE_ENABLED=false
 
 # ===== 安全 =====
 # 敏感字段加密密钥，32 字节随机串的 base64，生成方式见下文
