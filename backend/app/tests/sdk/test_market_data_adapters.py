@@ -13,7 +13,13 @@ def test_list_supported_providers() -> None:
         "tushare_pro",
         "rqdata",
         "wind",
+        "tqsdk",
     }
+
+
+def test_factory_rejects_tqsdk_for_stock() -> None:
+    with pytest.raises(ValueError, match="仅支持期货"):
+        get_market_data_adapter(Market.STOCK, "tqsdk", {})
 
 
 def test_tushare_requires_config() -> None:

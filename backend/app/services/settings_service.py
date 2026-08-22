@@ -20,6 +20,7 @@ SENSITIVE_FIELD_NAMES = [
     "market_data.ifind_password",
     "market_data.tushare_token",
     "market_data.rqdata_password",
+    "market_data.tqsdk_auth_password",
     "ai.api_key",
 ]
 
@@ -73,6 +74,14 @@ MARKET_DATA_PROVIDERS = [
         "description": "连接本机 Wind 终端和 WindPy。",
     },
     {
+        "id": "tqsdk",
+        "label": "天勤 TqSdk",
+        "tier": "免费实时",
+        "coverage": "期货专用",
+        "mode": "实时",
+        "description": "快期免费实时期货行情；仅需快期账号，不要求期货资金账户。",
+    },
+    {
         "id": "mock",
         "label": "Mock 模拟行情",
         "tier": "内置",
@@ -82,7 +91,8 @@ MARKET_DATA_PROVIDERS = [
     },
 ]
 
-REALTIME_PROVIDERS = {"ifind", "tdx", "akshare", "rqdata", "wind"}
+REALTIME_PROVIDERS = {"ifind", "tdx", "akshare", "rqdata", "wind", "tqsdk"}
+FUTURES_ONLY_PROVIDERS = {"tqsdk"}
 CATALOG_SYNC_PROVIDERS = {"ifind", "akshare"}
 
 
@@ -100,6 +110,10 @@ class SettingsService:
             "futures_sdk_path": settings.futures_sdk_path,
             "futures_sdk_account": settings.futures_account,
             "quote_provider": settings.quote_provider,
+            "stock_quote_provider": settings.stock_quote_provider,
+            "futures_quote_provider": settings.futures_quote_provider,
+            "tqsdk_auth_user": settings.tqsdk_auth_user,
+            "tqsdk_auth_password": settings.tqsdk_auth_password,
             "akshare_poll_seconds": settings.akshare_poll_seconds,
             "tdx_endpoint": settings.tdx_endpoint,
             "tdx_poll_seconds": settings.tdx_poll_seconds,
@@ -164,10 +178,19 @@ class SettingsService:
         overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         env = self._env_defaults()
+        legacy_provider = self._resolved_value(
+            "quote_provider", str(env["quote_provider"])
+        ).strip().lower()
+        stock_provider = self._resolved_value(
+            "stock_quote_provider", str(env.get("stock_quote_provider") or "")
+        ).strip().lower()
+        futures_provider = self._resolved_value(
+            "futures_quote_provider", str(env.get("futures_quote_provider") or "")
+        ).strip().lower()
         config: dict[str, Any] = {
-            "quote_provider": self._resolved_value(
-                "quote_provider", str(env["quote_provider"])
-            ).strip().lower(),
+            "quote_provider": legacy_provider,
+            "stock_quote_provider": stock_provider or legacy_provider,
+            "futures_quote_provider": futures_provider or legacy_provider,
             "akshare_poll_seconds": float(
                 self._resolved_value(
                     "akshare_poll_seconds", str(env["akshare_poll_seconds"])
@@ -222,10 +245,24 @@ class SettingsService:
                 )
                 or 5.0
             ),
+            "tqsdk_auth_user": self._resolved_value(
+                "tqsdk_auth_user", str(env.get("tqsdk_auth_user") or "")
+            ).strip(),
+            "tqsdk_auth_password": self._resolved_value(
+                "tqsdk_auth_password", str(env.get("tqsdk_auth_password") or "")
+            ),
         }
         if overrides:
             if "provider" in overrides:
                 config["quote_provider"] = str(overrides["provider"] or "mock").strip().lower()
+            if "stock_provider" in overrides or "stock_quote_provider" in overrides:
+                value = overrides.get("stock_provider", overrides.get("stock_quote_provider"))
+                config["stock_quote_provider"] = str(value or "mock").strip().lower()
+            if "futures_provider" in overrides or "futures_quote_provider" in overrides:
+                value = overrides.get(
+                    "futures_provider", overrides.get("futures_quote_provider")
+                )
+                config["futures_quote_provider"] = str(value or "mock").strip().lower()
             if "ifind_username" in overrides:
                 config["ifind_username"] = str(overrides["ifind_username"] or "").strip()
             if overrides.get("ifind_password"):
@@ -255,6 +292,12 @@ class SettingsService:
                 ).strip()
             if overrides.get("rqdata_password"):
                 config["rqdata_password"] = str(overrides["rqdata_password"])
+            if "tqsdk_auth_user" in overrides:
+                config["tqsdk_auth_user"] = str(
+                    overrides["tqsdk_auth_user"] or ""
+                ).strip()
+            if overrides.get("tqsdk_auth_password"):
+                config["tqsdk_auth_password"] = str(overrides["tqsdk_auth_password"])
         return config
 
     def get_settings(self) -> dict:
@@ -287,10 +330,33 @@ class SettingsService:
             },
             "market_data": {
                 "provider": market_data_config["quote_provider"],
-                "configured": self._market_data_configured(market_data_config),
-                "realtime": market_data_config["quote_provider"]
+                "stock_provider": market_data_config["stock_quote_provider"],
+                "futures_provider": market_data_config["futures_quote_provider"],
+                "configured": self._market_data_configured(
+                    market_data_config,
+                    provider=market_data_config["stock_quote_provider"],
+                )
+                and self._market_data_configured(
+                    market_data_config,
+                    provider=market_data_config["futures_quote_provider"],
+                ),
+                "stock_configured": self._market_data_configured(
+                    market_data_config,
+                    provider=market_data_config["stock_quote_provider"],
+                ),
+                "futures_configured": self._market_data_configured(
+                    market_data_config,
+                    provider=market_data_config["futures_quote_provider"],
+                ),
+                "realtime": market_data_config["stock_quote_provider"]
+                in REALTIME_PROVIDERS
+                or market_data_config["futures_quote_provider"]
                 in REALTIME_PROVIDERS,
-                "catalog_sync_supported": market_data_config["quote_provider"]
+                "catalog_sync_supported": market_data_config[
+                    "stock_quote_provider"
+                ]
+                in CATALOG_SYNC_PROVIDERS
+                or market_data_config["futures_quote_provider"]
                 in CATALOG_SYNC_PROVIDERS,
                 "providers": [
                     {
@@ -328,6 +394,11 @@ class SettingsService:
                     "rqdata_poll_seconds"
                 ],
                 "wind_poll_seconds": market_data_config["wind_poll_seconds"],
+                "tqsdk_auth_user_ref": market_data_config["tqsdk_auth_user"],
+                "tqsdk_credentials_configured": bool(
+                    market_data_config["tqsdk_auth_user"]
+                    and market_data_config["tqsdk_auth_password"]
+                ),
             },
             "ai": {
                 "provider": ai_config["provider"],
@@ -364,16 +435,53 @@ class SettingsService:
                 flat_updates["futures_sdk_password"] = futures["password"]
 
         if market_data := payload.get("market_data"):
-            if "provider" in market_data:
-                provider = str(market_data["provider"] or "mock").strip().lower()
-                if provider not in {
-                    item["id"] for item in MARKET_DATA_PROVIDERS
-                }:
+            supported_ids = {item["id"] for item in MARKET_DATA_PROVIDERS}
+
+            def _validate_provider(name: str, value: str) -> str:
+                provider = str(value or "mock").strip().lower()
+                if provider not in supported_ids:
                     raise BizError(
                         ErrorCode.SYS_INVALID_CONFIG,
                         f"不支持行情源：{provider}",
                     )
-                flat_updates["quote_provider"] = provider
+                if provider in FUTURES_ONLY_PROVIDERS and name.startswith("stock"):
+                    raise BizError(
+                        ErrorCode.SYS_INVALID_CONFIG,
+                        f"{provider} 仅可用于期货行情源",
+                    )
+                return provider
+
+            if "provider" in market_data:
+                flat_updates["quote_provider"] = _validate_provider(
+                    "provider", market_data["provider"]
+                )
+            if "stock_provider" in market_data or "stock_quote_provider" in market_data:
+                raw = market_data.get(
+                    "stock_provider", market_data.get("stock_quote_provider")
+                )
+                flat_updates["stock_quote_provider"] = _validate_provider(
+                    "stock_provider", raw
+                )
+            if (
+                "futures_provider" in market_data
+                or "futures_quote_provider" in market_data
+            ):
+                raw = market_data.get(
+                    "futures_provider", market_data.get("futures_quote_provider")
+                )
+                flat_updates["futures_quote_provider"] = _validate_provider(
+                    "futures_provider", raw
+                )
+            # 兼容旧前端：只改 provider 时同步到股票源；期货若未单独指定则一并更新
+            if (
+                "quote_provider" in flat_updates
+                and "stock_quote_provider" not in flat_updates
+                and "futures_quote_provider" not in flat_updates
+            ):
+                provider = flat_updates["quote_provider"]
+                if provider not in FUTURES_ONLY_PROVIDERS:
+                    flat_updates["stock_quote_provider"] = provider
+                flat_updates["futures_quote_provider"] = provider
             for key, default in (
                 ("akshare_poll_seconds", 10.0),
                 ("tdx_poll_seconds", 3.0),
@@ -406,6 +514,17 @@ class SettingsService:
                 )
             if "rqdata_password" in market_data and market_data["rqdata_password"]:
                 flat_updates["rqdata_password"] = market_data["rqdata_password"]
+            if "tqsdk_auth_user" in market_data:
+                flat_updates["tqsdk_auth_user"] = (
+                    market_data["tqsdk_auth_user"] or ""
+                )
+            if (
+                "tqsdk_auth_password" in market_data
+                and market_data["tqsdk_auth_password"]
+            ):
+                flat_updates["tqsdk_auth_password"] = market_data[
+                    "tqsdk_auth_password"
+                ]
 
         if ai := payload.get("ai"):
             if "provider" in ai:
@@ -427,6 +546,7 @@ class SettingsService:
             "ifind_password",
             "tushare_token",
             "rqdata_password",
+            "tqsdk_auth_password",
             "ai_api_key",
         }
 
@@ -454,7 +574,27 @@ class SettingsService:
         from app.sdk.market_data.factory import get_market_data_adapter
 
         config = self.get_market_data_runtime_config(overrides)
+        test_market = str((overrides or {}).get("test_market") or "").strip().lower()
         provider = config["quote_provider"]
+        if test_market == "futures":
+            provider = config["futures_quote_provider"]
+        elif test_market == "stock":
+            provider = config["stock_quote_provider"]
+        elif (overrides or {}).get("provider"):
+            provider = str(overrides["provider"]).strip().lower()
+        elif provider in FUTURES_ONLY_PROVIDERS:
+            test_market = "futures"
+        else:
+            # 默认优先测股票源；若仅期货侧变更且为 tqsdk，测期货
+            if config["futures_quote_provider"] in FUTURES_ONLY_PROVIDERS and (
+                overrides or {}
+            ).get("futures_provider"):
+                provider = config["futures_quote_provider"]
+                test_market = "futures"
+            else:
+                provider = config["stock_quote_provider"]
+                test_market = "stock"
+
         if provider == "mock":
             return {
                 "ok": True,
@@ -468,24 +608,33 @@ class SettingsService:
                 ErrorCode.SYS_INVALID_CONFIG,
                 f"暂不支持行情源：{provider}",
             )
-        if not self._market_data_configured(config):
+        if not self._market_data_configured(config, provider=provider):
             label = self._provider_label(provider)
             raise BizError(
                 ErrorCode.SYS_INVALID_CONFIG,
                 f"{label} 尚未完成必要配置或本地组件未安装",
             )
 
-        sample_symbol = str((overrides or {}).get("sample_symbol") or "600000.SH").strip()
+        if provider in FUTURES_ONLY_PROVIDERS or test_market == "futures":
+            market = Market.FUTURES
+            sample_symbol = str(
+                (overrides or {}).get("sample_symbol") or "RB0"
+            ).strip()
+        else:
+            market = Market.STOCK
+            sample_symbol = str(
+                (overrides or {}).get("sample_symbol") or "600000.SH"
+            ).strip()
+
         if provider == "akshare":
             from app.sdk.akshare_adapter import AkshareAdapter
 
-            # 连接测试只验证单标的轻量接口，禁止同时启动全市场后台同步。
             adapter = AkshareAdapter(
-                market=Market.STOCK,
+                market=market,
                 config={**config, "akshare_background_sync": False},
             )
         else:
-            adapter = get_market_data_adapter(Market.STOCK, provider, config)
+            adapter = get_market_data_adapter(market, provider, config)
         started_at = perf_counter()
         try:
             adapter.connect()
@@ -551,11 +700,17 @@ class SettingsService:
             "tushare_pro": "tushare",
             "rqdata": "rqdatac",
             "wind": "WindPy",
+            "tqsdk": "tqsdk",
         }.get(provider)
         return bool(module_name and importlib.util.find_spec(module_name))
 
-    def _market_data_configured(self, config: dict[str, Any]) -> bool:
-        provider = config["quote_provider"]
+    def _market_data_configured(
+        self,
+        config: dict[str, Any],
+        *,
+        provider: str | None = None,
+    ) -> bool:
+        provider = str(provider or config["quote_provider"]).strip().lower()
         if provider == "ifind":
             return bool(
                 config["ifind_username"]
@@ -575,6 +730,12 @@ class SettingsService:
             )
         if provider == "tdx":
             return bool(config["tdx_endpoint"])
+        if provider == "tqsdk":
+            return bool(
+                config.get("tqsdk_auth_user")
+                and config.get("tqsdk_auth_password")
+                and self._provider_component_installed(provider)
+            )
         if provider in {"akshare", "wind"}:
             return self._provider_component_installed(provider)
         return provider == "mock"

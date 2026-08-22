@@ -32,10 +32,13 @@ type ProviderId =
   | "tushare_pro"
   | "rqdata"
   | "wind"
+  | "tqsdk"
   | "mock";
 
 type MarketDataValues = {
   provider: ProviderId;
+  stock_provider: ProviderId;
+  futures_provider: ProviderId;
   akshare_poll_seconds?: number;
   tdx_endpoint?: string;
   tdx_poll_seconds?: number;
@@ -48,6 +51,8 @@ type MarketDataValues = {
   rqdata_password?: string;
   rqdata_poll_seconds?: number;
   wind_poll_seconds?: number;
+  tqsdk_auth_user?: string;
+  tqsdk_auth_password?: string;
 };
 
 type MarketDataTestResult = {
@@ -121,6 +126,15 @@ const FALLBACK_PROVIDERS = [
     component_installed: false,
   },
   {
+    id: "tqsdk",
+    label: "天勤 TqSdk",
+    tier: "免费实时",
+    coverage: "期货专用",
+    mode: "实时",
+    description: "快期免费实时期货行情。",
+    component_installed: true,
+  },
+  {
     id: "mock",
     label: "Mock 模拟行情",
     tier: "内置",
@@ -131,15 +145,21 @@ const FALLBACK_PROVIDERS = [
   },
 ];
 
-function toPayload(values: MarketDataValues) {
+const FUTURES_ONLY = new Set<ProviderId>(["tqsdk"]);
+
+function toPayload(values: MarketDataValues, testMarket?: "stock" | "futures") {
+  const sampleSymbol =
+    testMarket === "futures" || values.futures_provider === "tqsdk"
+      ? "RB0"
+      : "600000.SH";
   return {
     ...values,
+    provider: values.stock_provider,
+    stock_provider: values.stock_provider,
+    futures_provider: values.futures_provider,
     ifind_username: values.ifind_username?.trim() ?? "",
-    ...(values.ifind_password
-      ? { ifind_password: values.ifind_password }
-      : {}),
-    tdx_endpoint:
-      values.tdx_endpoint?.trim() || "http://127.0.0.1:17709/",
+    ...(values.ifind_password ? { ifind_password: values.ifind_password } : {}),
+    tdx_endpoint: values.tdx_endpoint?.trim() || "http://127.0.0.1:17709/",
     ...(values.tushare_token
       ? { tushare_token: values.tushare_token.trim() }
       : {}),
@@ -147,8 +167,56 @@ function toPayload(values: MarketDataValues) {
     ...(values.rqdata_password
       ? { rqdata_password: values.rqdata_password }
       : {}),
-    sample_symbol: "600000.SH",
+    tqsdk_auth_user: values.tqsdk_auth_user?.trim() ?? "",
+    ...(values.tqsdk_auth_password
+      ? { tqsdk_auth_password: values.tqsdk_auth_password }
+      : {}),
+    sample_symbol: sampleSymbol,
+    ...(testMarket ? { test_market: testMarket } : {}),
   };
+}
+
+function ProviderGrid({
+  title,
+  providers,
+  activeId,
+  onSelect,
+}: {
+  title: string;
+  providers: typeof FALLBACK_PROVIDERS;
+  activeId: ProviderId;
+  onSelect: (id: ProviderId) => void;
+}) {
+  return (
+    <div className="market-provider-section">
+      <Typography.Text strong>{title}</Typography.Text>
+      <div className="market-provider-grid" style={{ marginTop: 8 }}>
+        {providers.map((item) => {
+          const active = item.id === activeId;
+          return (
+            <button
+              key={`${title}-${item.id}`}
+              type="button"
+              className={`market-provider-card${active ? " is-active" : ""}`}
+              onClick={() => onSelect(item.id as ProviderId)}
+            >
+              <span className="market-provider-card__top">
+                <strong>{item.label}</strong>
+                <Tag color={item.tier.includes("免费") ? "green" : undefined}>
+                  {item.tier}
+                </Tag>
+              </span>
+              <span>{item.description}</span>
+              <small>
+                {item.coverage} · {item.mode}
+                {!item.component_installed ? " · 组件未安装" : ""}
+              </small>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function MarketDataConfigPanel({ onSaved }: Props) {
@@ -162,7 +230,10 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
   );
   const [testError, setTestError] = useState<string | null>(null);
   const [testedAt, setTestedAt] = useState<string | null>(null);
-  const provider = (Form.useWatch("provider", form) ?? "ifind") as ProviderId;
+  const stockProvider = (Form.useWatch("stock_provider", form) ??
+    "akshare") as ProviderId;
+  const futuresProvider = (Form.useWatch("futures_provider", form) ??
+    "mock") as ProviderId;
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings"],
@@ -170,18 +241,48 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
   });
 
   const providers = data?.market_data?.providers ?? FALLBACK_PROVIDERS;
-  const selectedProvider = providers.find((item) => item.id === provider);
-  const componentReady = selectedProvider?.component_installed !== false;
+  const stockProviders = providers.filter(
+    (item) => !FUTURES_ONLY.has(item.id as ProviderId),
+  );
+  const futuresProviders = providers;
+  const selectedFutures = providers.find((item) => item.id === futuresProvider);
+  const selectedStock = providers.find((item) => item.id === stockProvider);
+  const needsTqsdk =
+    stockProvider === "tqsdk" || futuresProvider === "tqsdk";
+  const needsIfind =
+    stockProvider === "ifind" || futuresProvider === "ifind";
+  const needsTdx = stockProvider === "tdx" || futuresProvider === "tdx";
+  const needsTushare =
+    stockProvider === "tushare_pro" || futuresProvider === "tushare_pro";
+  const needsRqdata =
+    stockProvider === "rqdata" || futuresProvider === "rqdata";
+  const needsAkshare =
+    stockProvider === "akshare" || futuresProvider === "akshare";
+  const needsWind =
+    stockProvider === "wind" || futuresProvider === "wind";
+  const componentReady =
+    (selectedStock?.component_installed !== false) &&
+    (selectedFutures?.component_installed !== false);
   const configured = Boolean(
-    data?.market_data?.provider === provider && data.market_data.configured,
+    data?.market_data?.stock_configured &&
+      data?.market_data?.futures_configured,
   );
 
   useEffect(() => {
     if (!data) return;
+    const stock =
+      (data.market_data?.stock_provider as ProviderId) ||
+      (data.market_data?.provider as ProviderId) ||
+      "mock";
+    const futures =
+      (data.market_data?.futures_provider as ProviderId) ||
+      (data.market_data?.provider as ProviderId) ||
+      "mock";
     form.setFieldsValue({
-      provider: (data.market_data?.provider as ProviderId) ?? "mock",
-      akshare_poll_seconds:
-        data.market_data?.akshare_poll_seconds ?? 10,
+      provider: stock,
+      stock_provider: stock,
+      futures_provider: futures,
+      akshare_poll_seconds: data.market_data?.akshare_poll_seconds ?? 10,
       tdx_endpoint:
         data.market_data?.tdx_endpoint ?? "http://127.0.0.1:17709/",
       tdx_poll_seconds: data.market_data?.tdx_poll_seconds ?? 3,
@@ -189,12 +290,13 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
       ifind_password: "",
       ifind_poll_seconds: data.market_data?.ifind_poll_seconds ?? 3,
       tushare_token: "",
-      tushare_poll_seconds:
-        data.market_data?.tushare_poll_seconds ?? 10,
+      tushare_poll_seconds: data.market_data?.tushare_poll_seconds ?? 10,
       rqdata_username: data.market_data?.rqdata_username_ref ?? "",
       rqdata_password: "",
       rqdata_poll_seconds: data.market_data?.rqdata_poll_seconds ?? 5,
       wind_poll_seconds: data.market_data?.wind_poll_seconds ?? 5,
+      tqsdk_auth_user: data.market_data?.tqsdk_auth_user_ref ?? "",
+      tqsdk_auth_password: "",
     });
   }, [data, form]);
 
@@ -202,16 +304,39 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
     setTestResult(null);
     setTestError(null);
     setTestedAt(null);
-  }, [provider]);
+  }, [stockProvider, futuresProvider]);
 
   const test = useMutation({
-    mutationFn: (values: MarketDataValues) =>
-      api.post<MarketDataTestResult>("/settings/test-market-data", {
-        market_data: toPayload(values),
-      }, {
-        signal: AbortSignal.timeout(35_000),
-        silent: true,
-      }),
+    mutationFn: async (values: MarketDataValues) => {
+      const results: MarketDataTestResult[] = [];
+      if (values.stock_provider !== "mock") {
+        results.push(
+          await api.post<MarketDataTestResult>(
+            "/settings/test-market-data",
+            { market_data: toPayload(values, "stock") },
+            { signal: AbortSignal.timeout(35_000), silent: true },
+          ),
+        );
+      }
+      if (values.futures_provider !== "mock") {
+        results.push(
+          await api.post<MarketDataTestResult>(
+            "/settings/test-market-data",
+            { market_data: toPayload(values, "futures") },
+            { signal: AbortSignal.timeout(35_000), silent: true },
+          ),
+        );
+      }
+      if (!results.length) {
+        return {
+          ok: true,
+          provider: "mock",
+          realtime: false,
+          message: "模拟行情已启用，无需连接外部源站。",
+        } satisfies MarketDataTestResult;
+      }
+      return results[results.length - 1];
+    },
     onMutate: () => {
       setTestResult(null);
       setTestError(null);
@@ -230,31 +355,16 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
 
   const save = useMutation({
     mutationFn: async (values: MarketDataValues) => {
-      if (values.provider !== "mock") {
+      if (values.stock_provider !== "mock" || values.futures_provider !== "mock") {
         setSaveStage("testing");
-        const result = await api.post<MarketDataTestResult>(
-          "/settings/test-market-data",
-          {
-            market_data: toPayload(values),
-          },
-          {
-            signal: AbortSignal.timeout(35_000),
-            silent: true,
-          },
-        );
-        setTestedAt(new Date().toLocaleString("zh-CN", { hour12: false }));
-        setTestResult(result);
-        if (!result.ok) {
-          throw new Error(result.message ?? "行情源连接测试未通过");
-        }
+        await test.mutateAsync(values);
       }
       setSaveStage("saving");
-      return api.put<SettingsData>("/settings", {
-        market_data: toPayload(values),
-      }, {
-        signal: AbortSignal.timeout(20_000),
-        silent: true,
-      });
+      return api.put<SettingsData>(
+        "/settings",
+        { market_data: toPayload(values) },
+        { signal: AbortSignal.timeout(20_000), silent: true },
+      );
     },
     onMutate: () => {
       setTestResult(null);
@@ -262,19 +372,12 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
     },
     onSuccess: (next) => {
       setTestedAt(new Date().toLocaleString("zh-CN", { hour12: false }));
-      if (next.market_data?.provider === "mock") {
-        setTestResult({
-          ok: true,
-          provider: "mock",
-          realtime: false,
-          message: "模拟行情已启用，无需连接外部源站。",
-        });
-      }
       setTestError(null);
       form.setFieldsValue({
         ifind_password: "",
         tushare_token: "",
         rqdata_password: "",
+        tqsdk_auth_password: "",
       });
       qc.setQueryData(["settings"], next);
       void qc.invalidateQueries({ queryKey: ["settings"] });
@@ -314,16 +417,6 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
     }
   };
 
-  const pollField = (
-    {
-      ifind: "ifind_poll_seconds",
-      tdx: "tdx_poll_seconds",
-      akshare: "akshare_poll_seconds",
-      tushare_pro: "tushare_poll_seconds",
-      rqdata: "rqdata_poll_seconds",
-      wind: "wind_poll_seconds",
-    } as Partial<Record<ProviderId, keyof MarketDataValues>>
-  )[provider];
   const testDescription = testResult
     ? [
         testResult.sample_symbol
@@ -356,7 +449,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
             }`}
           >
             {configured
-              ? `${selectedProvider?.label ?? provider} 已启用`
+              ? `股票 ${selectedStock?.label ?? stockProvider} · 期货 ${selectedFutures?.label ?? futuresProvider}`
               : "等待配置"}
           </span>
         </div>
@@ -367,10 +460,10 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
           {configured ? <CheckCircleFilled /> : <RadarChartOutlined />}
         </div>
         <div>
-          <strong>按场景选择行情源，不把“免费”误标成交易级数据</strong>
+          <strong>股票与期货可选用不同行情源</strong>
           <p>
-            免费源适合研究和看盘；实盘策略建议保留 iFinD、Wind
-            等授权源，并通过连接测试确认延迟。
+            天勤 TqSdk 仅用于期货实时行情；股票请继续使用 AKShare / iFinD /
+            通达信等。免费源适合研究和看盘。
           </p>
         </div>
         <div className="market-data-security">
@@ -388,48 +481,44 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
         <Form.Item name="provider" hidden>
           <Input />
         </Form.Item>
+        <Form.Item name="stock_provider" hidden>
+          <Input />
+        </Form.Item>
+        <Form.Item name="futures_provider" hidden>
+          <Input />
+        </Form.Item>
 
-        <div className="market-provider-grid">
-          {providers.map((item) => {
-            const active = item.id === provider;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`market-provider-card${active ? " is-active" : ""}`}
-                onClick={() =>
-                  form.setFieldValue("provider", item.id as ProviderId)
-                }
-              >
-                <span className="market-provider-card__top">
-                  <strong>{item.label}</strong>
-                  <Tag color={item.tier.includes("免费") ? "green" : undefined}>
-                    {item.tier}
-                  </Tag>
-                </span>
-                <span>{item.description}</span>
-                <small>
-                  {item.coverage} · {item.mode}
-                  {!item.component_installed ? " · 组件未安装" : ""}
-                </small>
-              </button>
-            );
-          })}
-        </div>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <ProviderGrid
+            title="股票行情源"
+            providers={stockProviders}
+            activeId={stockProvider}
+            onSelect={(id) => {
+              form.setFieldValue("stock_provider", id);
+              form.setFieldValue("provider", id);
+            }}
+          />
+          <ProviderGrid
+            title="期货行情源"
+            providers={futuresProviders}
+            activeId={futuresProvider}
+            onSelect={(id) => form.setFieldValue("futures_provider", id)}
+          />
+        </Space>
 
         {!componentReady ? (
           <Alert
             type="warning"
             showIcon
-            title={`${selectedProvider?.label ?? provider} 本地组件尚未安装`}
+            title="本地组件尚未安装"
             description="配置入口已经开放；安装对应官方 Python 组件或客户端后即可测试并启用。"
-            style={{ marginBottom: 14 }}
+            style={{ marginTop: 14, marginBottom: 14 }}
           />
         ) : null}
 
-        <div className="market-provider-config">
+        <div className="market-provider-config" style={{ marginTop: 14 }}>
           <Row gutter={12}>
-            {provider === "ifind" ? (
+            {needsIfind ? (
               <>
                 <Col span={12}>
                   <Form.Item
@@ -471,7 +560,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
               </>
             ) : null}
 
-            {provider === "tdx" ? (
+            {needsTdx ? (
               <Col span={24}>
                 <Form.Item
                   name="tdx_endpoint"
@@ -490,7 +579,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
               </Col>
             ) : null}
 
-            {provider === "tushare_pro" ? (
+            {needsTushare ? (
               <Col span={24}>
                 <Form.Item
                   name="tushare_token"
@@ -516,7 +605,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
               </Col>
             ) : null}
 
-            {provider === "rqdata" ? (
+            {needsRqdata ? (
               <>
                 <Col span={12}>
                   <Form.Item
@@ -553,19 +642,58 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
               </>
             ) : null}
 
-            {provider === "akshare" ? (
+            {needsTqsdk ? (
+              <>
+                <Col span={12}>
+                  <Form.Item
+                    name="tqsdk_auth_user"
+                    label="快期账号"
+                    extra="仅用于期货行情；不要求期货资金账户。"
+                    rules={[{ required: true, message: "请填写快期账号" }]}
+                  >
+                    <Input prefix={<UserOutlined />} autoComplete="username" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="tqsdk_auth_password"
+                    label="快期密码"
+                    rules={[
+                      {
+                        validator: validatePassword(
+                          data?.market_data?.tqsdk_credentials_configured,
+                          " 快期密码",
+                        ),
+                      },
+                    ]}
+                  >
+                    <Input.Password
+                      prefix={<KeyOutlined />}
+                      placeholder={
+                        data?.market_data?.tqsdk_credentials_configured
+                          ? "••••••••  已安全保存"
+                          : "请输入快期密码"
+                      }
+                      autoComplete="new-password"
+                    />
+                  </Form.Item>
+                </Col>
+              </>
+            ) : null}
+
+            {needsAkshare ? (
               <Col span={24}>
                 <Alert
                   type="success"
                   showIcon
-                  title="免账号、免密钥"
-                  description="数据来自公开财经网站，源站限流或结构调整时可能短暂不可用，不建议单独作为自动实盘的唯一行情源。"
+                  title="AKShare：免账号、免密钥"
+                  description="数据来自公开财经网站，源站限流或结构调整时可能短暂不可用。"
                   style={{ marginBottom: 12 }}
                 />
               </Col>
             ) : null}
 
-            {provider === "wind" ? (
+            {needsWind ? (
               <Col span={24}>
                 <Alert
                   type="info"
@@ -577,28 +705,12 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
               </Col>
             ) : null}
 
-            {provider === "mock" ? (
-              <Col span={24}>
-                <Alert
-                  type="info"
-                  showIcon
-                  title="模拟行情不会连接外部市场"
-                  description="适合功能演示、策略开发和离线验证。"
-                  style={{ marginBottom: 12 }}
-                />
-              </Col>
-            ) : null}
-
-            {pollField ? (
+            {needsAkshare ? (
               <Col span={8}>
                 <Form.Item
-                  name={pollField}
-                  label="刷新周期"
-                  extra={
-                    provider === "akshare"
-                      ? "建议不少于 10 秒，降低公开源限流风险。"
-                      : "周期越短，接口调用量越高。"
-                  }
+                  name="akshare_poll_seconds"
+                  label="AKShare 刷新周期"
+                  extra="建议不少于 10 秒。"
                 >
                   <InputNumber
                     min={1}
@@ -616,16 +728,16 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
           type="warning"
           showIcon
           title="关于文华财经赢顺"
-          description="赢顺属于交易客户端；在没有厂商或期货公司授权行情接口的情况下，本系统不采用抓包、注入或网页爬取方式接入。拿到正式 API 后可沿用本行情路由直接新增。"
-          style={{ marginBottom: 14 }}
+          description="赢顺属于交易客户端；在没有厂商或期货公司授权行情接口的情况下，本系统不采用抓包、注入或网页爬取方式接入。"
+          style={{ marginBottom: 14, marginTop: 14 }}
         />
 
         {test.isPending || saveStage === "testing" ? (
           <Alert
             type="info"
             showIcon
-            title={`正在验证 ${selectedProvider?.label ?? provider}`}
-            description="正在读取单个样本行情，不会触发全市场下载。"
+            title="正在验证行情源"
+            description="股票与期货源会分别读取单个样本行情。"
             style={{ marginBottom: 14 }}
           />
         ) : saveStage === "saving" ? (
@@ -640,7 +752,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
           <Alert
             type="error"
             showIcon
-            title={`${selectedProvider?.label ?? provider} 验证未通过`}
+            title="行情源验证未通过"
             description={`${testError}${testedAt ? `；最近测试 ${testedAt}` : ""}`}
             style={{ marginBottom: 14 }}
           />
@@ -648,9 +760,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
           <Alert
             type="success"
             showIcon
-            title={`${selectedProvider?.label ?? provider} ${
-              configured ? "验证通过并已启用" : "连接测试通过"
-            }`}
+            title={configured ? "验证通过并已启用" : "连接测试通过"}
             description={testDescription || "行情源连接正常。"}
             style={{ marginBottom: 14 }}
           />
@@ -658,7 +768,7 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
           <Alert
             type="success"
             showIcon
-            title={`${selectedProvider?.label ?? provider} 当前已启用`}
+            title="当前行情配置已启用"
             description="配置已生效；如需重新确认源站连通性，请点击“测试连接”。"
             style={{ marginBottom: 14 }}
           />
@@ -672,10 +782,10 @@ export default function MarketDataConfigPanel({ onSaved }: Props) {
             disabled={!componentReady || test.isPending}
           >
             {saveStage === "testing"
-              ? "正在验证单股行情"
+              ? "正在验证行情"
               : saveStage === "saving"
                 ? "正在启用，订阅后台恢复"
-                : provider === "mock"
+                : stockProvider === "mock" && futuresProvider === "mock"
                   ? "启用模拟行情"
                   : "验证并启用"}
           </Button>

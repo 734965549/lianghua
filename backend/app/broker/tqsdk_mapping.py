@@ -61,15 +61,101 @@ def parse_symbol_exchange(symbol: str, exchange_id: str = "") -> tuple[str, str]
     return text, exchange
 
 
+def normalize_tq_instrument_id(instrument_id: str, exchange_id: str) -> str:
+    """按交易所惯例规范化合约代码大小写。
+
+    上期所/大商所/能源中心/广期所通常小写；中金所/郑商所通常大写。
+    """
+    text = str(instrument_id or "").strip()
+    exchange = normalize_exchange_id(exchange_id)
+    if not text:
+        return ""
+    if exchange in {"CFFEX", "CZCE"}:
+        return text.upper()
+    return text.lower()
+
+
 def to_tq_symbol(symbol: str, exchange_id: str = "") -> str:
     instrument, exchange = parse_symbol_exchange(symbol, exchange_id)
     if not instrument or not exchange:
         raise ValueError(f"合约缺少明确交易所代码: symbol={symbol!r} exchange_id={exchange_id!r}")
-    return f"{exchange}.{instrument}"
+    return f"{exchange}.{normalize_tq_instrument_id(instrument, exchange)}"
+
+
+def to_tq_quote_symbol(symbol: str, exchange_id: str = "") -> str:
+    """项目合约 → TqSdk 行情合约（含主连 KQ.m@ 与指数连续 KQ.i@）。
+
+    主连示例：RB0 → KQ.m@SHFE.rb
+    实际合约：rb2610 + SHFE → SHFE.rb2610
+    """
+    from app.core.domestic_futures import (
+        FUTURES_EXCHANGE_BY_PRODUCT,
+        futures_product_code,
+        is_main_continuous_symbol,
+    )
+
+    text = str(symbol or "").strip()
+    if not text:
+        raise ValueError("合约代码为空")
+
+    upper = text.upper()
+    if upper.startswith("KQ.I@") or upper.startswith("KQ.M@"):
+        return text
+
+    bare = text
+    exchange = normalize_exchange_id(exchange_id)
+    if "." in text:
+        left, right = text.split(".", 1)
+        left_u, right_u = left.strip().upper(), right.strip().upper()
+        if left_u in {"SHFE", "INE", "DCE", "CZCE", "CFFEX", "GFEX"} or left_u in _EXCHANGE_ALIASES:
+            bare, exchange = right.strip(), normalize_exchange_id(left_u)
+        elif right_u in {
+            "SHFE",
+            "INE",
+            "DCE",
+            "CZCE",
+            "CFFEX",
+            "GFEX",
+            "SHF",
+            "CZC",
+            "CFX",
+            "GFE",
+        } or right_u in _EXCHANGE_ALIASES:
+            bare, exchange = left.strip(), normalize_exchange_id(right_u)
+
+    bare_upper = bare.upper()
+    if bare_upper.endswith("_I") or (
+        bare_upper.endswith("I") and bare_upper[:-1] in FUTURES_EXCHANGE_BY_PRODUCT
+    ):
+        product = bare_upper[:-2] if bare_upper.endswith("_I") else bare_upper[:-1]
+        exchange = exchange or FUTURES_EXCHANGE_BY_PRODUCT.get(product, "")
+        if not exchange:
+            raise ValueError(f"指数连续缺少交易所: symbol={symbol!r}")
+        product_id = normalize_tq_instrument_id(product, exchange)
+        return f"KQ.i@{exchange}.{product_id}"
+
+    if is_main_continuous_symbol(bare):
+        product = futures_product_code(bare)
+        exchange = exchange or FUTURES_EXCHANGE_BY_PRODUCT.get(product, "")
+        if not product or not exchange:
+            raise ValueError(f"主连缺少品种或交易所: symbol={symbol!r}")
+        product_id = normalize_tq_instrument_id(product, exchange)
+        return f"KQ.m@{exchange}.{product_id}"
+
+    if not exchange:
+        product = futures_product_code(bare)
+        exchange = FUTURES_EXCHANGE_BY_PRODUCT.get(product, "")
+    return to_tq_symbol(bare, exchange)
 
 
 def from_tq_symbol(tq_symbol: str) -> tuple[str, str]:
     text = str(tq_symbol or "").strip()
+    if text.upper().startswith("KQ.M@") or text.upper().startswith("KQ.I@"):
+        payload = text.split("@", 1)[1] if "@" in text else text
+        if "." in payload:
+            exchange, instrument = payload.split(".", 1)
+            return instrument, normalize_exchange_id(exchange)
+        return payload, ""
     if "." in text:
         exchange, instrument = text.split(".", 1)
         return instrument, normalize_exchange_id(exchange)

@@ -8,6 +8,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://lianghua:lianghua_dev@127.0.0.1:5432/lianghua"
     # 专用测试库（pytest）；未配置时默认将库名改为 *_test，禁止与开发库同库
     test_database_url: str = ""
+    # API 轮询、定时同步和数据修复会并发访问数据库。显式设置连接池，避免采用
+    # SQLAlchemy 仅 5 个常驻连接的默认值而导致批量修复被短暂流量打断。
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+    database_pool_timeout_seconds: float = 5.0
+    database_pool_recycle_seconds: int = 1800
 
     # SDK
     stock_sdk_path: str = ""
@@ -47,9 +53,12 @@ class Settings(BaseSettings):
     tqsdk_live_arm_token: str = ""
     tqsdk_command_timeout_seconds: float = 10.0
     tqsdk_command_queue_size: int = 1000
+    tqsdk_reconnect_max_seconds: float = 60.0
 
-    # 行情源
-    quote_provider: str = "mock"  # mock / akshare / tdx / ifind / tushare_pro / rqdata / wind
+    # 行情源（兼容旧字段 quote_provider；优先使用按市场拆分的配置）
+    quote_provider: str = "mock"  # mock / akshare / tdx / ifind / tushare_pro / rqdata / wind / tqsdk
+    stock_quote_provider: str = ""  # 空则回退 quote_provider
+    futures_quote_provider: str = ""  # 空则回退 quote_provider
     akshare_poll_seconds: float = 10.0  # 新浪行情轮询间隔（新浪建议>=10s避免封IP）
     tdx_endpoint: str = "http://127.0.0.1:17709/"
     tdx_poll_seconds: float = 3.0

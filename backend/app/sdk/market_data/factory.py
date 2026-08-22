@@ -17,6 +17,7 @@ def _ensure_registry() -> None:
     from app.sdk.market_data.ifind_adapter import IFindAdapter
     from app.sdk.market_data.rqdata_adapter import RQDataAdapter
     from app.sdk.market_data.tdx_adapter import TdxAdapter
+    from app.sdk.market_data.tqsdk_adapter import TqSdkMarketDataAdapter
     from app.sdk.market_data.tushare_adapter import TushareProAdapter
     from app.sdk.market_data.wind_adapter import WindAdapter
 
@@ -25,6 +26,7 @@ def _ensure_registry() -> None:
     _register("tushare_pro", TushareProAdapter)
     _register("rqdata", RQDataAdapter)
     _register("wind", WindAdapter)
+    _register("tqsdk", TqSdkMarketDataAdapter)
 
 
 def get_market_data_adapter(market: str | Market, provider: str, config: dict) -> MarketDataAdapter:
@@ -47,6 +49,9 @@ def get_market_data_adapter(market: str | Market, provider: str, config: dict) -
 
     if provider in ("", "mock"):
         raise SDKNotConfigured(f"行情 provider 为 {provider!r} 时不应创建 MarketDataAdapter，请使用 TradingAdapter")
+
+    if provider == "tqsdk" and market != Market.FUTURES:
+        raise ValueError("TqSdk 行情仅支持期货市场，股票请使用 akshare / ifind / tdx 等")
 
     _ensure_registry()
     cls = _PROVIDER_MAP.get(provider)

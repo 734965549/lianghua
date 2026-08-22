@@ -12,6 +12,8 @@ def _sdk_config() -> dict:
         "mode": settings.sdk_mode,
         "sdk_driver": settings.sdk_driver,
         "quote_provider": settings.quote_provider,
+        "stock_quote_provider": settings.stock_quote_provider,
+        "futures_quote_provider": settings.futures_quote_provider,
         "akshare_poll_seconds": settings.akshare_poll_seconds,
         "tdx_endpoint": settings.tdx_endpoint,
         "tdx_poll_seconds": settings.tdx_poll_seconds,
@@ -29,6 +31,12 @@ def _sdk_config() -> dict:
         "rqdata_password": settings.rqdata_password,
         "rqdata_poll_seconds": settings.rqdata_poll_seconds,
         "wind_poll_seconds": settings.wind_poll_seconds,
+        # TqSdk 免费行情仅需快期账号
+        "tqsdk_auth_user": settings.tqsdk_auth_user,
+        "tqsdk_auth_password": settings.tqsdk_auth_password,
+        "tqsdk_command_timeout_seconds": settings.tqsdk_command_timeout_seconds,
+        "tqsdk_command_queue_size": settings.tqsdk_command_queue_size,
+        "tqsdk_reconnect_max_seconds": settings.tqsdk_reconnect_max_seconds,
     }
     try:
         from app.db.session import SessionLocal

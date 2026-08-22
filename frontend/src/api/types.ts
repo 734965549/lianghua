@@ -33,7 +33,11 @@ export type SettingsData = {
   futures_sdk: { configured: boolean; path?: string; account_ref?: string };
   market_data?: {
     provider: string;
+    stock_provider?: string;
+    futures_provider?: string;
     configured: boolean;
+    stock_configured?: boolean;
+    futures_configured?: boolean;
     realtime: boolean;
     catalog_sync_supported?: boolean;
     providers?: Array<{
@@ -58,6 +62,8 @@ export type SettingsData = {
     rqdata_credentials_configured?: boolean;
     rqdata_poll_seconds?: number;
     wind_poll_seconds?: number;
+    tqsdk_auth_user_ref?: string;
+    tqsdk_credentials_configured?: boolean;
   };
   ai: {
     provider: string;
@@ -166,6 +172,10 @@ export type Instrument = {
   name: string;
   exchange: string;
   source?: string;
+  alias?: string;
+  catalog_kind?: "stock" | "main_continuous" | "contract" | string;
+  product_code?: string;
+  product_name?: string;
 };
 
 export type InstrumentCatalog = {
@@ -174,7 +184,10 @@ export type InstrumentCatalog = {
   counts: {
     stock: number;
     futures: number;
+    futures_main?: number;
+    futures_all?: number;
   };
+  view?: "browser" | "all" | string;
   source: "ifind" | "bundled" | "mixed" | string;
   last_synced_at?: string | null;
 };

@@ -193,7 +193,7 @@ def broker(fake_api, monkeypatch):
 def test_mapping_symbol_and_offset():
     assert to_tq_symbol("rb2610", "SHFE") == "SHFE.rb2610"
     assert to_tq_symbol("SHFE.rb2610") == "SHFE.rb2610"
-    assert to_tq_symbol("RB2610.SHF") == "SHFE.RB2610"
+    assert to_tq_symbol("RB2610.SHF") == "SHFE.rb2610"
     assert map_offset(OffsetFlag.OPEN, "SHFE") == "OPEN"
     assert map_offset(OffsetFlag.CLOSE_TODAY, "SHFE") == "CLOSETODAY"
     assert map_offset(OffsetFlag.CLOSE_YESTERDAY, "SHFE") == "CLOSE"
